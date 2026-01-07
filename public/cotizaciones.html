@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<title>Nueva Cotización | CELICA</title>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css">
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+	<style>
+		table th, table td { text-align: center; vertical-align: middle; }
+		.readonly { background-color: #f8f9fa; }
+		.lineas-table th, .lineas-table td { vertical-align: middle; }
+	</style>
+</head>
+<body>
+	<mi-header></mi-header>
+	<div class="container mt-4">
+		<h2>Nueva Cotización</h2>
+
+		<div class="row mb-3">
+			<div class="col-md-4">
+				<label>Seleccionar Cliente</label>
+				<select id="selectCliente" class="form-select"></select>
+				<button class="btn btn-sm btn-secondary mt-1" id="btnClienteManual">Cliente Manual</button>
+			</div>
+			<div class="col-md-4">
+				<label>Nombre</label>
+				<input type="text" class="form-control" id="inputClienteNombre">
+			</div>
+			<div class="col-md-4">
+				<label>Dirección</label>
+				<input type="text" class="form-control" id="inputClienteDireccion">
+			</div>
+		</div>
+
+		<div class="row mb-3">
+			<div class="col-md-2">
+				<label>DNI</label>
+				<input type="text" class="form-control" id="inputDNI">
+			</div>
+			<div class="col-md-2">
+				<label>RTN</label>
+				<input type="text" class="form-control" id="inputRTN">
+			</div>
+			<div class="col-md-2">
+				<label>Fecha</label>
+				<input type="date" class="form-control" id="fechaCotizacion">
+			</div>
+			<div class="col-md-6">
+				<label>Seleccionar Camión</label>
+				<select id="selectCamion" class="form-select"></select>
+			</div>
+			<div class="col-md-4 d-flex align-items-end">
+				<button id="btnAgregarLinea" class="btn btn-success w-100" disabled>+ Agregar servicio</button>
+			</div>
+		</div>
+
+		<table class="table table-bordered" id="tablaLineas">
+			<thead class="table-light">
+				<tr>
+					<th>#</th>
+					<th>Servicio</th>
+					<th>Descripción</th>
+					<th>Cantidad</th>
+					<th>Precio</th>
+					<th>Total</th>
+					<th>Acciones</th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+
+		<div class="text-end mb-3">
+			<div>Subtotal: <span id="subtotal">0.00</span></div>
+			<div>ISV 15%: <span id="isv">0.00</span></div>
+			<div>Total: <span id="total">0.00</span></div>
+		</div>
+
+		<div class="mb-3">
+			<button id="btnGuardar" class="btn btn-primary">Guardar Parcial</button>
+			<button id="btnEmitir" class="btn btn-success">Generar Cotización</button>
+		</div>
+		
+	</div>
+
+	<script type="module" src="../assets/js/supabase.js"></script>
+	<script type="module" src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+	<mi-footer></mi-footer>
+	<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.28/dist/jspdf.plugin.autotable.min.js"></script>
+	<script type="module" src="../assets/js/cotizaciones.js"></script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<title>Clientes | CELICA</title>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+	<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css">
+</head>
+<body>
+	<mi-header></mi-header>
+	<div class="container mt-4">
+		<h2>Clientes</h2>
+
+		<!-- Formulario para agregar/editar camión -->
+		<form id="formCliente" class="mb-4">
+			<div class="row">
+				<div class="col-md-6">
+					<label>Nombre legal</label>
+					<input type="text" id="nombre_legal" class="form-control" required>
+				</div>
+
+				<div class="col-md-4">
+					<label>DNI</label>
+					<input type="text" id="dni" class="form-control" required>
+				</div>
+
+				<div class="col-md-6">
+					<label>Nombre comercial</label>
+					<input type="text" id="nombre_comercial" class="form-control">
+				</div>
+
+				<div class="col-md-4">
+					<label>RTN</label>
+					<input type="text" id="rtn" class="form-control">
+				</div>
+
+				<div class="col-md-8">
+					<label>Dirección</label>
+					<input type="text" id="direccion" class="form-control">
+				</div>
+
+				<div class="col-md-4">
+					<label>Teléfono</label>
+					<input type="text" id="telefono" class="form-control">
+				</div>
+
+				<div class="col-md-4">
+					<label>Email</label>
+					<input type="email" id="email" class="form-control">
+				</div>
+			</div>
+
+			<button type="submit" class="btn btn-primary mt-3">Guardar</button>
+			<button type="button" id="btnCancelar" class="btn btn-secondary mt-3">Cancelar</button>
+		</form>
+
+		<!-- Tabla de camiones -->
+		<table class="table table-bordered nowrap" id="tablaClientes" style="width:100%">
+			<thead>
+				<tr>
+					<th>DNI</th>
+					<th>Nombre legal</th>
+					<th>Nombre comercial</th>
+					<th>RTN</th>
+					<th>Teléfono</th>
+					<th>Email</th>
+					<th>Dirección</th>
+					<th>Estado</th>
+					<th>Acciones</th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+
+	</div>
+	<script type="module" src="../assets/js/supabase.js"></script>
+	<script type="module" src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+	<mi-footer></mi-footer>
+	<script type="module" src="../assets/js/clientes.js"></script>
+	<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+	<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+	<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+
+	<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+	<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+</body>
+</html>
