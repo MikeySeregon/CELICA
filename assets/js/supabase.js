@@ -62,20 +62,7 @@ class MiHeader extends HTMLElement {
 class MiFooter extends HTMLElement
 {
 	connectedCallback(){
-		this.innerHTML = `<script type="module" src="../assets/js/guard.js"></script>
-		<script type="module">
-			import { supabase } from '../assets/js/supabase.js'
-			const btnLogout = document.getElementById('btn-logout');
-
-			btnLogout.addEventListener('click', async () =>
-			{
-					const { error } = await supabase.auth.signOut();
-					if (error)
-						console.error('Error al cerrar sesión:', error.message);
-					else 
-						window.location.href = 'login.html';
-			});
-		</script>`;
+		this.innerHTML = ``;
 	}
 }
 
