@@ -1,12 +1,15 @@
 import { supabase } from './supabase.js';
 const { jsPDF } = window.jspdf; // ya lo hacías correctamente en generarPDF()
-const doc = new jsPDF();
 
 // Datos de ejemplo (puedes reemplazar con consultas reales)
 let clientes = [];
 let camiones = [];
 let servicios = [];
 let preciosServicios = [];
+
+const params = new URLSearchParams(window.location.search);
+const idCotizacion = params.get('id');
+const modo = params.get('modo');
 
 // Cotización inicial
 let cotizacion = {
@@ -19,13 +22,149 @@ let cotizacion = {
 	totales: { subtotal: 0, isv: 0, total: 0 }
 };
 
+async function cargarCotizacionExistente(id){
+	const { data: cab, error } = await supabase
+		.from('cotizaciones')
+		.select('*')
+		.eq('id_cotizacion', id)
+		.single();
+
+	if (error) throw error;
+
+	cotizacion.id_cotizacion = cab.id_cotizacion;
+	cotizacion.fecha = cab.fecha_cotizacion;
+	cotizacion.estado = cab.id_estado;
+	cotizacion.id_camion = cab.id_camion;
+
+	document.getElementById('fechaCotizacion').value = cab.fecha_cotizacion;
+
+	await cargarPreciosCamion(cab.id_camion);
+	/*choiceCamion.setChoiceByValue(String(cab.id_camion));*/
+
+	/*cotizacion.lineas = [];*/
+
+	const clienteBD = clientes.find(c => c.nombre_legal === cab.cliente);
+
+	if (clienteBD) {
+		choiceCliente.setChoiceByValue(String(clienteBD.dni));
+
+		cotizacion.cliente = {
+			id_cliente: clienteBD.dni,
+			nombre: clienteBD.nombre_legal,
+			direccion: clienteBD.direccion,
+			dni: clienteBD.dni,
+			rtn: clienteBD.rtn,
+			es_nuevo: false
+		};
+
+		document.getElementById('inputDNI').value = clienteBD.dni;
+		document.getElementById('inputRTN').value = clienteBD.rtn;
+	} else {
+		// Cliente manual
+		cotizacion.cliente = {
+			id_cliente: null,
+			nombre: cab.cliente,
+			direccion: cab.direccion,
+			dni: '',
+			rtn: '',
+			es_nuevo: true
+		};
+	}
+
+	const { data: det } = await supabase
+		.from('cotizacion_detalle')
+		.select('*')
+		.eq('id_cotizacion', id)
+		.not('id_servicio', 'is', null);
+
+	cotizacion.lineas = det.map(d => ({
+		id_linea: crypto.randomUUID(),
+		id: d.id,
+		id_servicio: d.id_servicio,
+		descripcion: d.descripcion_servicio,
+		precio_unitario: d.precio_unitario,
+		cantidad: d.cantidad,
+		total_linea: d.total_linea,
+		es_camion: d.id_servicio === null
+	}));
+
+	if (!cotizacion.lineas.find(l => l.es_camion)) {
+        cotizacion.lineas.unshift({
+            id_linea: crypto.randomUUID(),
+            id_servicio: null,
+            nombre_servicio: 'Camión',
+            descripcion: camiones.find(c => c.id_camion === cab.id_camion)?.camion || `Camión ${cab.id_camion}`,
+            precio_unitario: 0,
+            cantidad: 0,
+            total_linea: 0,
+            es_camion: true
+        });
+    }
+	
+	recalcularTotales();
+	actualizarTabla();
+	if (cotizacion.estado === 6) {
+		document.querySelectorAll('button, input, select')
+			.forEach(el => el.disabled = true);
+	}
+}
+
 // Choices.js
-const choiceCliente = new Choices('#selectCliente', {searchEnabled:true, removeItemButton:true});
-const choiceCamion = new Choices('#selectCamion', {searchEnabled:true});
+let choiceCliente = new Choices('#selectCliente', {searchEnabled:true, removeItemButton:true});
+let choiceCamion = new Choices('#selectCamion', {searchEnabled:true});
 
 function initDropdowns() {
 	choiceCliente.setChoices(clientes.map(c => ({ value: c.dni, label: c.nombre_legal })), 'value', 'label', false);
 	choiceCamion.setChoices(camiones.map(c => ({ value: c.id_camion, label: c.camion })), 'value', 'label', false);
+}
+
+async function initDropdownsEditar() {
+	// Inicializar clientes
+	choiceCliente.setChoices(
+		clientes.map(c => ({ value: c.dni, label: c.nombre_legal })),
+		'value',
+		'label',
+		false
+	);
+
+	// Seleccionar cliente de la cotización
+	if (cotizacion.cliente && cotizacion.cliente.dni) {
+		choiceCliente.setChoiceByValue(String(cotizacion.cliente.dni));
+		document.getElementById('inputClienteNombre').value = cotizacion.cliente.nombre;
+		document.getElementById('inputClienteDireccion').value = cotizacion.cliente.direccion;
+		document.getElementById('inputDNI').value = cotizacion.cliente.dni;
+		document.getElementById('inputRTN').value = cotizacion.cliente.rtn;
+	}
+
+	// Inicializar camiones
+	let opcionesCamiones = camiones.map(c => ({ value: c.id_camion, label: c.camion }));
+
+	if (cotizacion.id_camion && !camiones.some(c => c.id_camion === cotizacion.id_camion)) {
+        opcionesCamiones.push({
+            value: cotizacion.id_camion,
+            label: `Camión ${cotizacion.id_camion} (inactivo)`
+        });
+    }
+
+	if (choiceCamion) choiceCamion.destroy();
+
+	const selectCamionElem = document.getElementById('selectCamion');
+    selectCamionElem.innerHTML = '';
+    opcionesCamiones.forEach(op => {
+        const option = document.createElement('option');
+        option.value = op.value;
+        option.text = op.label;
+        selectCamionElem.add(option);
+    });
+	selectCamionElem.disabled = true;
+
+	choiceCamion = new Choices(selectCamionElem, { searchEnabled: true });
+
+	if (cotizacion.id_camion) {
+        choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
+        choiceCamion.disable();
+		document.getElementById('btnAgregarLinea').disabled = false;
+    }
 }
 
 // ---------------- Eventos ----------------
@@ -33,55 +172,45 @@ document.addEventListener('DOMContentLoaded', async () => {
 	document.getElementById('fechaCotizacion').value = cotizacion.fecha;
 
 	await cargarDatos();
-	initDropdowns();
+	/*initDropdowns();*/
+
+	if (modo === 'editar' && idCotizacion) {
+		await cargarCotizacionExistente(idCotizacion);
+		await initDropdownsEditar();
+	} else {
+		initDropdowns(); // modo nuevo
+	}
+
 	actualizarTabla();
 
 	document.getElementById('btnAgregarLinea').addEventListener('click', agregarLineaServicio);
 	document.getElementById('btnClienteManual').addEventListener('click', clienteManual);
 	document.getElementById('btnGuardar').addEventListener('click', () => guardarParcial(cotizacion));
 	document.getElementById('btnEmitir').addEventListener('click', () => emitirCotizacion(cotizacion));
+	document.getElementById('btnAnular').addEventListener('click', anularCotizacion);
 	document.getElementById('selectCamion').addEventListener('change', seleccionarCamion);
 	document.getElementById('selectCliente').addEventListener('change', seleccionarCliente);
 });
 
-
 // ---------------- Funciones ----------------
-
 async function cargarDatos() {
-	// Clientes activos
-	const { data: clientesData, error: errClientes } = await supabase
-		.from('clientes')
-		.select('*')
-		.eq('estado', 1);
-	if (errClientes) console.error(errClientes);
-	else clientes = clientesData;
-
-	// Camiones activos
-	const { data: camionesData, error: errCamiones } = await supabase
-		.from('camiones')
-		.select('*')
-		.eq('estado', 1);
-	if (errCamiones) console.error(errCamiones);
-	else camiones = camionesData;
-
-	// Servicios
-	const { data: serviciosData, error: errServicios } = await supabase
-		.from('servicios')
-		.select('*')
-		.eq('estado', 1);
-	if (errServicios) console.error(errServicios);
-	else servicios = serviciosData;
-
-	// Precios de servicios activos
 	const hoy = new Date().toISOString().slice(0, 10);
-	const { data: preciosData, error: errPrecios } = await supabase
-		.from('precios_servicio')
-		.select('*')
-		.eq('estado', 1)
-		.lte('fecha_inicio', hoy)
-		.gte('fecha_fin', hoy);
-	if (errPrecios) console.error(errPrecios);
-	else preciosServicios = preciosData || [];
+
+	const [{ data: c }, { data: cam }, { data: s }, { data: p }] = await Promise.all([
+		supabase.from('clientes').select('*').eq('estado', 1),
+		supabase.from('camiones').select('*').eq('estado', 1),
+		supabase.from('servicios').select('*').eq('estado', 1),
+		supabase.from('precios_servicio')
+			.select('*')
+			.eq('estado', 1)
+			.lte('fecha_inicio', hoy)
+			.gte('fecha_fin', hoy)
+	]);
+
+	clientes = c || [];
+	camiones = cam || [];
+	servicios = s || [];
+	preciosServicios = p || [];
 }
 
 async function cargarPreciosCamion(id_camion) {
@@ -95,112 +224,97 @@ async function cargarPreciosCamion(id_camion) {
 		.lte('fecha_inicio', hoy)
 		.gte('fecha_fin', hoy);
 
-	if (error) {
-		console.error(error);
-		preciosServicios = [];
-	} else {
-		preciosServicios = data; // Guardamos precios vigentes
-	}
+	preciosServicios = error ? [] : data || [];
 }
 
-function obtenerPrecioServicio(id_linea, id_servicio){
-	const p = preciosServicios.find(p => p.id_servicio === id_servicio);
+function obtenerPrecioServicio(id_camion, id_servicio) {
+	const p = preciosServicios.find(
+		x => x.id_camion === id_camion && x.id_servicio === id_servicio
+	);
 	return p ? p.precio : 0;
 }
 
 function obtenerServiciosDisponibles(id_linea) {
-	const idCamion = cotizacion.id_camion;
-	if (!idCamion) return [];
+	if (!cotizacion.id_camion) return [];
 
-	// Filtrar por camión y que tengan precio activo
-	let disponibles = preciosServicios.filter(p => p.id_camion === idCamion);
-
-	// Mapear a objeto completo de servicio con precio
-	disponibles = disponibles.map(p => {
-		const s = servicios.find(s => s.id_servicio === p.id_servicio);
-		return s ? { ...s, precio: p.precio } : null;
-	}).filter(Boolean);
-
-	// Evitar duplicados
-	disponibles = disponibles.filter(s => 
-		!cotizacion.lineas.some(l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea)
-	);
-
-	return disponibles;
+	return preciosServicios
+		.filter(p => p.id_camion === cotizacion.id_camion)
+		.map(p => {
+			const s = servicios.find(x => x.id_servicio === p.id_servicio);
+			return s ? { ...s, precio: p.precio } : null;
+		})
+		.filter(Boolean)
+		.filter(s =>
+			!cotizacion.lineas.some(
+				l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea
+			)
+		);
 }
 
-async function seleccionarCamion(event){
-	const id = parseInt(event.target.value);
-	const hayServicios = cotizacion.lineas.some(l=>!l.es_camion);
-	if(cotizacion.id_camion && hayServicios){
-		alert('Ya seleccionaste un camión y hay servicios ingresados. No se puede cambiar.');
-		event.target.value = cotizacion.id_camion;
+async function seleccionarCamion(e) {
+	if (modo === 'editar') {
+		e.target.value = cotizacion.id_camion;
 		return;
 	}
+	const id = parseInt(e.target.value);
+	if (cotizacion.id_camion && cotizacion.lineas.some(l => !l.es_camion)) {
+		alert('No se puede cambiar el camión con servicios agregados.');
+		e.target.value = cotizacion.id_camion;
+		return;
+	}
+
 	cotizacion.id_camion = id;
 	await cargarPreciosCamion(id);
-	const lineaCamion = cotizacion.lineas.find(l=>l.es_camion);
-	if(lineaCamion){
-		lineaCamion.descripcion = getSelectedText(event.target);
-	} else {
+
+	if (!cotizacion.lineas.find(l => l.es_camion)) {
 		agregarLineaCamion();
 		document.getElementById('btnAgregarLinea').disabled = false;
 	}
+
 	actualizarTabla();
 }
 
 function agregarLineaCamion() {
-	const linea = {
-		id_linea: crypto.randomUUID(),
-		id_servicio: null,
-		nombre_servicio:'Camión',
-		descripcion:getSelectedText(document.getElementById('selectCamion')),
-		precio_unitario:0,
-		cantidad:0,
-		total_linea:0,
-		es_camion:true
-	};
-	cotizacion.lineas.push(linea);
-	recalcularTotales();
-	actualizarTabla();
+	if (!cotizacion.lineas.find(l => l.es_camion)) {
+		cotizacion.lineas.unshift({
+			id_linea: crypto.randomUUID(),
+			id_servicio: null,
+			nombre_servicio: 'Camión',
+			descripcion: getSelectedText(document.getElementById('selectCamion')),
+			precio_unitario: 0,
+			cantidad: 0,
+			total_linea: 0,
+			es_camion: true
+		});
+	}
 }
 
-function getSelectedText(selectElement) {
-	var selectedIndex = selectElement.selectedIndex;
-	var selectedOption = selectElement.options[selectedIndex];
-	return selectedOption.text || selectedOption.textContent;
+function getSelectedText(select) {
+	return select.options[select.selectedIndex]?.text || '';
 }
 
 function agregarLineaServicio() {
-	const serviciosEnLinea = cotizacion.lineas
-		.filter(l => !l.es_camion)
-		.map(l => l.id_servicio);
-
-	const serviciosDisponibles = servicios.filter(s =>
-		preciosServicios.some(p => p.id_servicio === s.id_servicio && p.id_camion === cotizacion.id_camion) &&
-		!serviciosEnLinea.includes(s.id_servicio)
-	);
-
-	if (serviciosDisponibles.length === 0) {
-		alert('No hay más servicios disponibles para este camión');
+	const disponibles = obtenerServiciosDisponibles(null);
+	if (!disponibles.length) {
+		alert('No hay más servicios disponibles');
 		return;
 	}
 
-	const servicio = serviciosDisponibles[0];
-	const precio = obtenerPrecioServicio(cotizacion.id_camion, servicio.id_servicio);
+	const s = disponibles[0];
+	const precio = obtenerPrecioServicio(cotizacion.id_camion, s.id_servicio);
 
-	const linea = {
+	cotizacion.lineas.push({
 		id_linea: crypto.randomUUID(),
-		id_servicio: servicio.id_servicio,
-		nombre_servicio: servicio.servicio,
-		descripcion: servicio.descripcion || servicio.servicio,
-		precio_unitario: precio,
+		id: null,
+		id_servicio: null,
+		nombre_servicio: '',
+		descripcion: '',
+		precio_unitario: 0,
 		cantidad: 1,
-		total_linea: redondeoBancario(precio * 1),
+		total_linea: 0,
 		es_camion: false
-	};
+	});
 
-	cotizacion.lineas.push(linea);
 	recalcularTotales();
 	actualizarTabla();
 }
@@ -314,6 +428,17 @@ function generarDropdownServicio(id_linea, id_servicio_seleccionado) {
 		select.appendChild(option);
 	});
 
+	if (
+		id_servicio_seleccionado &&
+		!disponibles.some(s => s.id_servicio === id_servicio_seleccionado)
+		) {
+		const s = servicios.find(x => x.id_servicio === id_servicio_seleccionado);
+		if (s) {
+			disponibles.unshift(s);
+		}
+	}
+
+
 	return select.outerHTML;
 }
 
@@ -339,8 +464,6 @@ function cambiarServicioLinea(event) {
 }
 
 function sincronizarClienteManual() {
-	if (!cotizacion.cliente.es_nuevo) return;
-
 	cotizacion.cliente.nombre = document.getElementById('inputClienteNombre').value.trim();
 	cotizacion.cliente.direccion = document.getElementById('inputClienteDireccion').value.trim();
 	cotizacion.cliente.dni = document.getElementById('inputDNI').value.trim();
@@ -399,13 +522,17 @@ window.eliminarLinea = (id) => {
 	actualizarTabla();
 };
 
-function recalcularTotales(){
-	let subtotal = cotizacion.lineas.reduce((acc,l)=>acc+l.total_linea,0);
-	subtotal = redondeoBancario(subtotal);
-	const isv = redondeoBancario(subtotal*0.15);
-	cotizacion.totales.subtotal = subtotal;
-	cotizacion.totales.isv = isv;
-	cotizacion.totales.total = redondeoBancario(subtotal+isv);
+function recalcularTotales() {
+	const subtotal = redondeoBancario(
+		cotizacion.lineas.reduce((a, l) => a + (l.total_linea || 0), 0)
+	);
+	const isv = redondeoBancario(subtotal * 0.15);
+
+	cotizacion.totales = {
+		subtotal,
+		isv,
+		total: redondeoBancario(subtotal + isv)
+	};
 }
 
 function redondeoBancario(valor){
@@ -419,47 +546,130 @@ function esEditable(){
 // ---------------- Guardado ----------------
 async function guardarParcial(cot){
 	try{
+		if (cot.estado !== 7) return;
+
 		sincronizarClienteManual();
-		if(!cot.id_cotizacion){
-			const { data, error } = await supabase.from('cotizaciones').insert([{
-				fecha_cotizacion: cot.fecha,
-				cliente: cot.cliente.nombre,
-				direccion: cot.cliente.direccion,
-				subtotal: cot.totales.subtotal,
-				isv: cot.totales.isv,
-				total: cot.totales.total,
-				id_estado: 7,
-				id_camion: cot.id_camion
-			}]).select().single();
-			if(error) throw error;
+		const idCliente = await asegurarClienteParcial();
+		recalcularTotales();
+
+		// ---------------- NUEVA ----------------
+		if (!cot.id_cotizacion) {
+			const { data, error } = await supabase
+				.from('cotizaciones')
+				.insert({
+					fecha_cotizacion: cot.fecha,
+					id_camion: cot.id_camion,
+					id_estado: 7,
+					id_cliente: idCliente || null,
+					cliente: cot.cliente.nombre || '',
+					direccion: cot.cliente.direccion || '',
+					subtotal: cot.totales.subtotal,
+					isv: cot.totales.isv,
+					total: cot.totales.total
+				})
+				.select()
+				.single();
+
+			if (error) {
+				console.error('Error guardando cotización:', error);
+				throw error;
+			}
+
 			cot.id_cotizacion = data.id_cotizacion;
 		}
+		// ---------------- EXISTENTE ----------------
+		else {
+			await supabase
+				.from('cotizaciones')
+				.update({
+					fecha_cotizacion: cot.fecha,
 
-		const lineasData = cot.lineas.map(l=>({
-			id_cotizacion: cot.id_cotizacion,
+					id_cliente: idCliente,
+					cliente: cot.cliente.nombre,
+					direccion: cot.cliente.direccion,
+
+					subtotal: cot.totales.subtotal,
+					isv: cot.totales.isv,
+					total: cot.totales.total
+				})
+				.eq('id_cotizacion', cot.id_cotizacion);
+		}
+
+		// ---------------- DETALLE ----------------
+		await guardarDetalleCotizacion(cot.id_cotizacion);
+
+		alert('Cotización guardada');
+	} catch(err){
+		console.error(err);
+		alert('Error guardando cotización');
+	}
+}
+
+async function guardarDetalleCotizacion(idCotizacion){
+	if (!idCotizacion) return;
+	const lineasServicio = cotizacion.lineas.filter(l => !l.es_camion);
+	if (!lineasServicio.length) return;
+	// IDs existentes en frontend
+	const idsFrontend = lineasServicio
+		.map(l => l.id)
+		.filter(id => typeof id === 'number');
+
+	// IDs existentes en BD
+	const { data: bdLineas } = await supabase
+		.from('cotizacion_detalle')
+		.select('id')
+		.eq('id_cotizacion', idCotizacion);
+
+	const idsBD = (bdLineas || [])
+		.map(l => l.id)
+		.filter(id => typeof id === 'number');
+
+	// ---------------- DELETE ----------------
+	const eliminados = idsBD.filter(id => !idsFrontend.includes(id));
+	if (eliminados.length) {
+		await supabase
+			.from('cotizacion_detalle')
+			.delete()
+			.in('id', eliminados);
+	}
+
+	// ---------------- INSERT / UPDATE ----------------
+	for (const l of lineasServicio) {
+		const payload = {
+			id_cotizacion: idCotizacion,
 			id_servicio: l.id_servicio,
 			descripcion_servicio: l.descripcion,
 			precio_unitario: l.precio_unitario,
 			cantidad: l.cantidad,
 			total_linea: l.total_linea
-		}));
+		};
 
-		await supabase
-		.from('cotizacion_detalle')
-		.delete()
-		.eq('id_cotizacion', cot.id_cotizacion);
+		if (l.id && idsBD.includes(l.id)) {
+			// UPDATE
+			await supabase
+				.from('cotizacion_detalle')
+				.update(payload)
+				.eq('id', l.id);
+		} else {
+			// INSERT
+			const { data } = await supabase
+				.from('cotizacion_detalle')
+				.insert(payload)
+				.select()
+				.single();
 
-		const { error: detErr } = await supabase.from('cotizacion_detalle').insert(lineasData);
-		if(detErr) throw detErr;
-		alert('Cotización guardada parcialmente');
-	} catch(err){
-		console.error(err);
-		alert('Error guardando cotización parcial');
+			l.id = data.id; // sincronizar
+		}
 	}
 }
 
+
 // ---------------- Emitir ----------------
 async function emitirCotizacion(cot){
+	if (cot.estado !== 7) {
+		alert('Esta cotización no puede ser emitida');
+		return;
+	}
 	try{
 		if(cot.cliente.es_nuevo){
 			cot.cliente.dni = String(cot.cliente.dni).trim();
@@ -521,7 +731,8 @@ async function emitirCotizacion(cot){
 		if(updErr) throw updErr;
 
 		alert('Cotización emitida');
-		generarPDF(cot);
+		await generarPDF(cot);
+		window.location.href = 'cotizaciones_historial.html';
 	} catch(err){
 		console.error(err);
 		alert('Error emitiendo cotización');
@@ -534,8 +745,6 @@ async function generarPDF(cot) {
 	const doc = new jsPDF('p','mm','letter');
 	const margenIzq = 14;
 	const margenDer = 14;
-	const anchoMax = doc.internal.pageSize.getWidth() - margenIzq - margenDer;
-	const anchoPagina = anchoMax;
 
 	// ---------------- Cargar datos del local ----------------
 	const { data, error } = await supabase
@@ -556,7 +765,7 @@ async function generarPDF(cot) {
 	await new Promise(resolve => img.onload = resolve);
 
 	// Conversión px → mm (170px)
-	const logoHeightMm = 45; // 170px ≈ 45mm
+	const logoHeightMm = 35; // 170px ≈ 45mm
 	const logoWidthMm = (img.width / img.height) * logoHeightMm;
 
 	// Asegurar que nunca exceda los márgenes
@@ -764,4 +973,60 @@ function obtenerPaginas(cot){
 		paginas.push(cot.lineas.slice(i,i+lineasPorPagina));
 	}
 	return paginas;
+}
+
+async function anularCotizacion(){
+	if (!cotizacion.id_cotizacion) return;
+
+	if (!confirm('¿Está seguro de anular esta cotización?')) return;
+
+	const { error } = await supabase
+		.from('cotizaciones')
+		.update({ id_estado: 6 })
+		.eq('id_cotizacion', cotizacion.id_cotizacion);
+
+	if (error) {
+		alert('Error al anular la cotización');
+		return;
+	}
+
+	alert('Cotización anulada');
+	window.location.href = 'cotizaciones_historial.html';
+}
+
+async function asegurarClienteParcial(){
+	sincronizarClienteManual();
+
+	const dni = String(cotizacion.cliente.dni || '').trim();
+	if (!dni) return null;
+
+	// ¿Existe?
+	const { data: existente } = await supabase
+		.from('clientes')
+		.select('*')
+		.eq('dni', dni)
+		.limit(1)
+		.maybeSingle();
+
+	if (existente) {
+		return existente.dni;
+	}
+
+	// Crear cliente parcial
+	const { data, error } = await supabase
+		.from('clientes')
+		.insert({
+			dni,
+			nombre_legal: cotizacion.cliente.nombre,
+			direccion: cotizacion.cliente.direccion,
+			rtn: cotizacion.cliente.rtn,
+			estado: 1
+		})
+		.select()
+		.single();
+
+	if (error) throw error;
+
+	clientes.push(data); // sincronizar frontend
+	return data.dni;
 }

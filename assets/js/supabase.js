@@ -20,6 +20,15 @@ class MiHeader extends HTMLElement {
 							<a class="nav-link" href="dashboard.html">Inicio</a>
 						</li>
 						<li class="nav-item dropdown">
+							<a class="nav-link dropdown-toggle" href="#" id="cotizacionesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+								Cotizaciones
+							</a>
+							<ul class="dropdown-menu" aria-labelledby="cotizacionesDropdown">
+								<li><a class="dropdown-item" href="cotizaciones.html">Nueva Cotización</a></li>
+								<li><a class="dropdown-item" href="cotizaciones_historial.html">Historial de Cotizaciones</a></li>
+							</ul>
+						</li>
+						<li class="nav-item dropdown">
 							<a class="nav-link dropdown-toggle" href="#" id="camionesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
 								Camiones
 							</a>
@@ -32,7 +41,7 @@ class MiHeader extends HTMLElement {
 							<a class="nav-link dropdown-toggle" href="#" id="serviciosDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
 								Servicios
 							</a>
-							<ul class="dropdown-menu" aria-labelledby="camionesDropdown">
+							<ul class="dropdown-menu" aria-labelledby="serviciosDropdown">
 								<li><a class="dropdown-item" href="servicios.html">Listado de Servicios</a></li>
 								<li><a class="dropdown-item" href="precio_servicio.html">Precios por Servicio</a></li>
 							</ul>

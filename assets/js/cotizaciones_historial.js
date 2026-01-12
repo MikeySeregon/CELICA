@@ -1,0 +1,498 @@
+import { supabase } from './supabase.js';
+
+let tabla;
+let modalDetalle;
+
+/* =========================
+	 Inicialización
+========================= */
+document.addEventListener('DOMContentLoaded', async () => {
+	modalDetalle = new bootstrap.Modal(
+		document.getElementById('modalDetalleCotizacion')
+	);
+
+	await cargarCotizaciones();
+});
+
+/* =========================
+	 Cargar listado principal
+========================= */
+async function cargarCotizaciones() {
+	const { data, error } = await supabase
+		.from('cotizaciones')
+		.select(`
+			id_cotizacion,
+			fecha_cotizacion,
+			cliente,
+			total,
+			id_estado
+		`)
+		.order('fecha_cotizacion', { ascending: false });
+
+	if (error) {
+		console.error(error);
+		alert('Error cargando cotizaciones');
+		return;
+	}
+
+	renderTabla(data);
+}
+
+/* =========================
+	 Render DataTable
+========================= */
+function renderTabla(cotizaciones) {
+	const tbody = document.querySelector('#tablaCotizaciones tbody');
+	tbody.innerHTML = '';
+
+	cotizaciones.forEach(c => {
+		const tr = document.createElement('tr');
+
+		tr.innerHTML = `
+			<td>${c.id_cotizacion}</td>
+			<td>${c.cliente}</td>
+			<td>${c.fecha_cotizacion}</td>
+			<td>${badgeEstado(c.id_estado)}</td>
+			<td>${Number(c.total).toFixed(2)}</td>
+			<td>
+				<button class="btn btn-sm btn-info me-1"
+					onclick="verDetalle(${c.id_cotizacion})">
+					Ver
+				</button>
+				${
+					c.id_estado === 7
+					? `<button class="btn btn-sm btn-warning"
+						onclick="editarCotizacion(${c.id_cotizacion})">
+						Editar
+						 </button>`
+					: ''
+				}
+				${
+					c.id_estado === 5
+					? `<button class="btn btn-sm btn-danger"
+						onclick="generarPDFHistorial(${c.id_cotizacion})">
+						PDF
+					</button>`
+					: ''
+				}
+			</td>
+		`;
+
+		tbody.appendChild(tr);
+	});
+
+	if (tabla) {
+		tabla.destroy();
+	}
+
+	tabla = new DataTable('#tablaCotizaciones', {
+		responsive: true,
+		order: [[0, 'desc']],
+		language: {
+			search: 'Buscar:',
+			lengthMenu: 'Mostrar _MENU_ registros',
+			info: 'Mostrando _START_ a _END_ de _TOTAL_',
+			paginate: {
+				first: 'Primero',
+				last: 'Último',
+				next: 'Siguiente',
+				previous: 'Anterior'
+			},
+			zeroRecords: 'No se encontraron registros'
+		}
+	});
+}
+
+/* =========================
+	 Estado (badge)
+========================= */
+function badgeEstado(id) {
+	switch (id) {
+		case 7:
+			return `<span class="badge bg-warning text-dark">Parcial</span>`;
+		case 5:
+			return `<span class="badge bg-success">Emitida</span>`;
+		default:
+			return `<span class="badge bg-secondary">Desconocido</span>`;
+	}
+}
+
+/* =========================
+	 Ver detalle (modal)
+========================= */
+window.verDetalle = async function (idCotizacion) {
+	try {
+		// Cabecera
+		const { data: cab, error: errCab } = await supabase
+			.from('cotizaciones')
+			.select('*')
+			.eq('id_cotizacion', idCotizacion)
+			.single();
+
+		if (errCab) throw errCab;
+
+		document.getElementById('detalleCliente').innerText = cab.cliente;
+		document.getElementById('detalleFecha').innerText = cab.fecha_cotizacion;
+		document.getElementById('detalleSubtotal').innerText = Number(cab.subtotal).toFixed(2);
+		document.getElementById('detalleIsv').innerText = Number(cab.isv).toFixed(2);
+		document.getElementById('detalleTotal').innerText = Number(cab.total).toFixed(2);
+
+		// Detalle
+		const { data: det, error: errDet } = await supabase
+			.from('cotizacion_detalle')
+			.select('*')
+			.eq('id_cotizacion', idCotizacion);
+
+		if (errDet) throw errDet;
+
+		const tbody = document.getElementById('detalleLineas');
+		tbody.innerHTML = '';
+
+		det.forEach(l => {
+			const tr = document.createElement('tr');
+			tr.innerHTML = `
+				<td class="text-end">${l.cantidad}</td>
+				<td>${l.descripcion_servicio}</td>
+				<td class="text-end">${Number(l.precio_unitario).toFixed(2)}</td>
+				<td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
+			`;
+			tbody.appendChild(tr);
+		});
+
+		modalDetalle.show();
+	} catch (err) {
+		console.error(err);
+		alert('Error cargando detalle de la cotización');
+	}
+};
+
+/* =========================
+	 Editar cotización
+========================= */
+window.editarCotizacion = function (idCotizacion) {
+	// Redirección directa
+	window.location.href = `cotizaciones.html?id=${idCotizacion}&modo=editar`;
+};
+
+/* =========================
+	 Generar PDF
+========================= */
+window.generarPDFHistorial = async function (idCotizacion) {
+	try {
+		// ================= Cabecera =================
+		const { data: cab, error: errCab } = await supabase
+			.from('cotizaciones')
+			.select(`
+				id_cotizacion,
+				fecha_cotizacion,
+				cliente,
+				direccion,
+				subtotal,
+				isv,
+				total,
+				id_camion,
+				camiones (
+					camion
+				)
+			`)
+			.eq('id_cotizacion', idCotizacion)
+			.single();
+
+		if (errCab) throw errCab;
+
+		// ================= Detalle =================
+		const { data: det, error: errDet } = await supabase
+			.from('cotizacion_detalle')
+			.select('*')
+			.eq('id_cotizacion', idCotizacion);
+
+		if (errDet) throw errDet;
+
+		if (!det || det.length === 0) {
+			throw new Error('La cotización no tiene líneas de detalle');
+		}
+
+		const lineaCamion = {
+			cantidad: 1,
+			descripcion: cab.camiones?.camion || 'CAMIÓN NO DEFINIDO',
+			precio_unitario: 0,
+			total_linea: 0,
+			es_camion: true,
+			id_servicio: null
+		};
+
+		// ================= Normalización =================
+		const lineasServicios = det.map(d => ({
+			cantidad: Number(d.cantidad || 0),
+			descripcion: d.descripcion_servicio || '',
+			precio_unitario: Number(d.precio_unitario || 0),
+			total_linea: Number(d.total_linea || 0),
+			es_camion: false,
+			id_servicio: d.id_servicio ?? null
+		}));
+
+		// ================= Objeto FINAL =================
+		const cot = {
+			id_cotizacion: cab.id_cotizacion,
+			fecha: cab.fecha_cotizacion,
+			cliente: {
+				nombre: cab.cliente,
+				direccion: cab.direccion
+			},
+			lineas: [lineaCamion, ...lineasServicios],
+			totales: {
+				subtotal: Number(cab.subtotal || 0),
+				isv: Number(cab.isv || 0),
+				total: Number(cab.total || 0)
+			}
+		};
+
+		await generarPDF(cot);
+
+	} catch (err) {
+		console.error(err);
+		alert(err.message || 'Error generando el PDF');
+	}
+};
+
+async function generarPDF(cot) {
+	const { jsPDF } = window.jspdf;
+	const doc = new jsPDF('p','mm','letter');
+	const margenIzq = 14;
+	const margenDer = 14;
+
+	// ---------------- Cargar datos del local ----------------
+	const { data, error } = await supabase
+		.from('datos')
+		.select('*')
+		.eq('id', 1)
+		.limit(1);
+
+	if (error || !data || data.length === 0) {
+		throw new Error('No se encontraron datos del local (tabla datos, id=1)');
+	}
+
+	const datosLocal = data[0];
+
+	// ---------------- Logo ----------------
+	const img = new Image();
+	img.src = '../assets/img/logo.png';
+	await new Promise(resolve => img.onload = resolve);
+
+	// Conversión px → mm (170px)
+	const logoHeightMm = 30; // 170px ≈ 45mm
+	const logoWidthMm = (img.width / img.height) * logoHeightMm;
+
+	// Asegurar que nunca exceda los márgenes
+	const maxWidth = doc.internal.pageSize.getWidth() - margenIzq - margenDer;
+	const finalLogoWidth = Math.min(logoWidthMm, maxWidth);
+	const finalLogoHeight = (finalLogoWidth / logoWidthMm) * logoHeightMm;
+
+	// Centrado horizontal
+	const logoX = (doc.internal.pageSize.getWidth() - finalLogoWidth) / 2;
+
+	doc.addImage(
+		img,
+		'PNG',
+		logoX,
+		10,
+		finalLogoWidth,
+		finalLogoHeight
+	);
+
+	// ---------------- Datos del local debajo del logo ----------------
+	const startY = 8 + logoHeightMm + 5;
+	const centerX = doc.internal.pageSize.getWidth()/2;
+	doc.setFontSize(11);
+	doc.text(datosLocal.direccion || '', centerX, startY, { align: 'center' });
+	doc.text(datosLocal.correo || '', centerX, startY + 7, { align: 'center' });
+	doc.text(`Cel.: ${datosLocal.telefono || ''}`, centerX, startY + 14, { align: 'center' });
+	doc.text(`RTN: ${datosLocal.rtn || ''}`, centerX, startY + 21, { align: 'center' });
+
+	let yActual = startY + 30;
+
+	// ---------------- Mini tabla Cliente / Dirección / Fecha ----------------
+	doc.autoTable({
+		startY: yActual,
+		margin: { left: margenIzq, right: margenDer },
+		theme: 'grid',
+		tableWidth: 'auto',
+		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220] },
+		body: [
+			[`Cliente: ${cot.cliente.nombre}`],
+			[`Dirección: ${cot.cliente.direccion}`],
+			[`Fecha: ${cot.fecha}`]
+		],
+		columns: [{ dataKey: 'info' }]
+	});
+
+	yActual = doc.lastAutoTable.finalY + 5;
+
+	// ---------------- Encabezado COTIZACIÓN ----------------
+	doc.setFontSize(12);
+	doc.setFont('helvetica','bold');
+	doc.text('COTIZACIÓN', centerX, yActual, { align: 'center' });
+	yActual += 5;
+
+	// ---------------- Detalle de Cotización ----------------
+	const lineasTotales = cot.lineas.filter(l => l.id_servicio !== null || l.es_camion);
+	const lineasPorPagina = 14;
+	const camionesLine = cot.lineas.find(l => l.es_camion) || { descripcion: '' };
+
+	for(let i=0; i<lineasTotales.length; i+=lineasPorPagina-1){
+		const pageLineas = lineasTotales.slice(i, i + lineasPorPagina - 1);
+		const body = [];
+
+		// Primera fila: camión centrado en descripción
+		body.push([
+			{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
+			{ content: camionesLine.descripcion, styles:{ fontStyle:'bold', halign:'center' } },
+			{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
+			{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
+		]);
+
+		pageLineas.forEach(l => {
+			if (l.es_camion) return;
+
+			const cantidad = Number(l.cantidad || 0);
+			const precio = Number(l.precio_unitario || 0);
+			const total = Number(l.total_linea || 0);
+
+			body.push([
+				{ content: cantidad.toLocaleString(), styles:{ halign:'right' } },
+				{ content: l.descripcion || '', styles:{ halign:'left' } },
+				{
+					content: precio.toLocaleString(undefined, {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					}),
+					styles:{ halign:'right' }
+				},
+				{
+					content: total.toLocaleString(undefined, {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					}),
+					styles:{ halign:'right' }
+				}
+			]);
+		});
+
+		// Totales solo en la última página
+		if(i + (lineasPorPagina-1) >= lineasTotales.length){
+			body.push(
+				['', '', { content: 'Subtotal', styles: { fontStyle: 'bold', halign: 'right' } },
+					{ content: cot.totales.subtotal.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
+				['', '', { content: '15% ISV', styles: { fontStyle: 'bold', halign: 'right' } },
+					{ content: cot.totales.isv.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
+				['', '', { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
+					{ content: cot.totales.total.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }]
+			);
+		}
+
+		doc.autoTable({
+			startY: yActual,
+			margin: { left: margenIzq, right: margenDer },
+			head: [['Cant.','Descripción','Valor C/U','Valor Total']],
+			body: body,
+			theme: 'grid',
+			styles: { fontSize: 10 },
+			headStyles: { fillColor: [220,220,220], halign:'center' }
+		});
+		yActual = doc.lastAutoTable.finalY + 5;
+		
+		if(i + (lineasPorPagina-1) >= lineasTotales.length){
+			const totalesY = yActual + 5;
+			const labelX = margenIzq + 110;
+			const valorX = margenIzq + 150;
+
+			// Total en letras
+			yActual = totalesY + 3;
+			doc.setFont('helvetica','normal');
+			doc.text(`Son: ${numeroALetras(cot.totales.total)} L 00/100`, centerX, yActual, { align:'center' });
+
+			// Línea de firma
+			yActual += 15;
+			doc.line(margenIzq+50, yActual, doc.internal.pageSize.getWidth()-margenIzq-50, yActual);
+			doc.text('Firma', centerX, yActual + 7, { align:'center' });
+		}
+
+		if(i + (lineasPorPagina-1) < lineasTotales.length){
+			doc.addPage();
+			yActual = 15; // margen superior para nuevas páginas
+		}
+	}
+
+	doc.save(`Cotizacion_${cot.id_cotizacion}.pdf`);
+}
+
+function numeroALetras(num) {
+	num = Math.floor(num);
+
+	if (num === 0) return 'CERO';
+
+	const unidades = [
+		'', 'UNO', 'DOS', 'TRES', 'CUATRO',
+		'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'
+	];
+
+	const especiales = [
+		'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE',
+		'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'
+	];
+
+	const decenas = [
+		'', '', 'VEINTE', 'TREINTA', 'CUARENTA',
+		'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'
+	];
+
+	const centenas = [
+		'', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS',
+		'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'
+	];
+
+	function convertirMenorDeMil(n) {
+		if (n === 0) return '';
+		if (n === 100) return 'CIEN';
+
+		let texto = '';
+
+		const c = Math.floor(n / 100);
+		const d = Math.floor((n % 100) / 10);
+		const u = n % 10;
+
+		if (c > 0) texto += centenas[c] + ' ';
+
+		if (d === 1) {
+			texto += especiales[u];
+		} else if (d > 1) {
+			texto += decenas[d];
+			if (u > 0) texto += ' Y ' + unidades[u];
+		} else if (u > 0) {
+			texto += unidades[u];
+		}
+
+		return texto.trim();
+	}
+
+	let resultado = '';
+
+	if (num >= 1000) {
+		const miles = Math.floor(num / 1000);
+		const resto = num % 1000;
+
+		if (miles === 1) {
+			resultado = 'MIL';
+		} else {
+			resultado = convertirMenorDeMil(miles) + ' MIL';
+		}
+
+		if (resto > 0) {
+			resultado += ' ' + convertirMenorDeMil(resto);
+		}
+	} else {
+		resultado = convertirMenorDeMil(num);
+	}
+
+	return resultado.trim();
+}
