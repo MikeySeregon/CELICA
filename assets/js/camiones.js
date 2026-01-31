@@ -5,6 +5,7 @@ const form = document.getElementById('formCamion');
 const tablaBody = document.querySelector('#tablaCamiones tbody');
 const btnCancelar = document.getElementById('btnCancelar');
 const selectTipo = document.getElementById('id_tipo');
+let tablaCamionesDT = null;
 
 // --- Funciones --- //
 
@@ -31,6 +32,11 @@ async function listarCamiones() {
 
 	if (error) return console.error(error);
 
+	// Destruir DataTable si existe
+	if (tablaCamionesDT) {
+		tablaCamionesDT.destroy();
+	}
+
 	tablaBody.innerHTML = '';
 	data.forEach(c => {
 		tablaBody.innerHTML += `
@@ -47,6 +53,31 @@ async function listarCamiones() {
 				</td>
 			</tr>
 		`;
+	});
+
+	tablaCamionesDT = $('#tablaCamiones').DataTable({
+		responsive: {
+			details: {
+				type: 'column'
+			}
+		},
+		columnDefs: [
+			{ responsivePriority: 1, targets: 0 }, // 
+			{ responsivePriority: 2, targets: 1 }, // 
+			/*{ responsivePriority: 3, targets: 2 }, //*/
+			/*{ responsivePriority: 4, targets: 3 }, //*/
+			{ responsivePriority: 5, targets: 4 }, // 
+		],
+		language: {
+			search: "Buscar:",
+			lengthMenu: "Mostrar _MENU_ registros",
+			info: "Mostrando _START_ a _END_ de _TOTAL_ camiones",
+			paginate: {
+				next: "Siguiente",
+				previous: "Anterior"
+			},
+			zeroRecords: "No se encontraron camiones"
+		}
 	});
 
 	// Asignar eventos

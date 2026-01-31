@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 const form = document.getElementById('formServicio');
 const tablaBody = document.querySelector('#tablaServicios tbody');
 const btnCancelar = document.getElementById('btnCancelar');
+let tablaServiciosDT = null;
 
 async function listarServicios() {
 	const { data, error } = await supabase
@@ -11,6 +12,10 @@ async function listarServicios() {
 		.order('id_servicio', { ascending: true });
 
 	if (error) return console.error(error);
+
+	if (tablaServiciosDT) {
+		tablaServiciosDT.destroy();
+	}
 
 	tablaBody.innerHTML = '';
 	tablaBody.innerHTML = '';
@@ -42,6 +47,31 @@ async function listarServicios() {
 				<td>${acciones}</td>
 			</tr>
 		`;
+	});
+
+	tablaServiciosDT = $('#tablaServicios').DataTable({
+		responsive: {
+			details: {
+				type: 'column'
+			}
+		},
+		columnDefs: [
+			{ responsivePriority: 1, targets: 0 }, // 
+			{ responsivePriority: 2, targets: 1 }, // 
+			/*{ responsivePriority: 3, targets: 2 }, //*/
+			/*{ responsivePriority: 4, targets: 3 }, //*/
+			{ responsivePriority: 5, targets: 4 }, // 
+		],
+		language: {
+			search: "Buscar:",
+			lengthMenu: "Mostrar _MENU_ registros",
+			info: "Mostrando _START_ a _END_ de _TOTAL_ servicios",
+			paginate: {
+				next: "Siguiente",
+				previous: "Anterior"
+			},
+			zeroRecords: "No se encontraron servicios"
+		}
 	});
 
 	// Agregar eventos a los botones después de renderizar

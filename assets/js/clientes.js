@@ -6,7 +6,6 @@ const tablaBody = document.querySelector('#tablaClientes tbody');
 const btnCancelar = document.getElementById('btnCancelar');
 let tablaClientesDT = null;
 
-
 // --- Funciones --- //
 
 // 1. Listar clientes
