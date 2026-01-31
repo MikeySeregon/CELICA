@@ -69,10 +69,26 @@ function renderTabla(cotizaciones) {
 				}
 				${
 					c.id_estado === 5
-					? `<button class="btn btn-sm btn-danger"
+					? `
+					<button class="btn btn-sm btn-danger me-1"
 						onclick="generarPDFHistorial(${c.id_cotizacion})">
 						PDF
-					</button>`
+					</button>
+					<button class="btn btn-sm btn-success"
+						onclick="aprobarCotizacion(${c.id_cotizacion})">
+						Aprobar
+					</button>
+					`
+					: ''
+				}
+				${
+					c.id_estado === 8
+					? `
+					<button class="btn btn-sm btn-danger me-1"
+						onclick="generarPDFHistorial(${c.id_cotizacion})">
+						PDF
+					</button>
+					`
 					: ''
 				}
 			</td>
@@ -112,6 +128,8 @@ function badgeEstado(id) {
 			return `<span class="badge bg-warning text-dark">Parcial</span>`;
 		case 5:
 			return `<span class="badge bg-success">Emitida</span>`;
+		case 8:
+			return `<span class="badge bg-primary">Aprobada</span>`;
 		default:
 			return `<span class="badge bg-secondary">Desconocido</span>`;
 	}
@@ -172,6 +190,26 @@ window.verDetalle = async function (idCotizacion) {
 window.editarCotizacion = function (idCotizacion) {
 	// Redirección directa
 	window.location.href = `cotizaciones.html?id=${idCotizacion}&modo=editar`;
+};
+
+window.aprobarCotizacion = async function (idCotizacion) {
+	const confirmar = confirm('¿Desea aprobar esta cotización? Esta acción no se puede deshacer.');
+	if (!confirmar) return;
+
+	try {
+		const { error } = await supabase
+			.from('cotizaciones')
+			.update({ id_estado: 8 })
+			.eq('id_cotizacion', idCotizacion);
+
+		if (error) throw error;
+
+		alert('Cotización aprobada correctamente');
+		await cargarCotizaciones(); // refresca tabla
+	} catch (err) {
+		console.error(err);
+		alert('Error aprobando la cotización');
+	}
 };
 
 /* =========================
