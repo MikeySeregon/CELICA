@@ -6,6 +6,8 @@ let clientes = [];
 let camiones = [];
 let servicios = [];
 let preciosServicios = [];
+let direcciones = [];
+let choiceDireccion = null;
 
 const params = new URLSearchParams(window.location.search);
 const idCotizacion = params.get('id');
@@ -175,10 +177,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	await cargarDatos();
 	/*initDropdowns();*/
-
+	initDropdownDirecciones();
 	if (modo === 'editar' && idCotizacion) {
 		await cargarCotizacionExistente(idCotizacion);
 		await initDropdownsEditar();
+		await initDropdownDirecciones(cab.direccion || '');
 	} else {
 		initDropdowns(); // modo nuevo
 	}
@@ -198,7 +201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function cargarDatos() {
 	const hoy = new Date().toISOString().slice(0, 10);
 
-	const [{ data: c }, { data: cam }, { data: s }, { data: p }] = await Promise.all([
+	const [{ data: c }, { data: cam }, { data: s }, { data: p }, { data: d }] = await Promise.all([
 		supabase.from('clientes').select('*').eq('estado', 1),
 		supabase.from('camiones').select('*').eq('estado', 1),
 		supabase.from('servicios').select('*').eq('estado', 1),
@@ -206,13 +209,15 @@ async function cargarDatos() {
 			.select('*')
 			.eq('estado', 1)
 			.lte('fecha_inicio', hoy)
-			.gte('fecha_fin', hoy)
+			.gte('fecha_fin', hoy),
+		supabase.from('direcciones').select('*').eq('estado', 1)
 	]);
 
 	clientes = c || [];
 	camiones = cam || [];
 	servicios = s || [];
 	preciosServicios = p || [];
+	direcciones = d || [];
 }
 
 async function cargarPreciosCamion(id_camion) {
@@ -325,7 +330,7 @@ function agregarLineaServicio() {
 function clienteManual() {
 	cotizacion.cliente.es_nuevo = true;
 	document.getElementById('inputClienteNombre').value = '';
-	document.getElementById('inputClienteDireccion').value = '';
+	document.getElementById('selectDireccion').value = '';
 	document.getElementById('inputDNI').value = '';
 	document.getElementById('inputRTN').value = '';
 	document.getElementById('selectCliente').disabled = true;
@@ -344,7 +349,7 @@ function seleccionarCliente(event) {
 			es_nuevo: false
 		};
 		document.getElementById('inputClienteNombre').value = c.nombre_legal;
-		document.getElementById('inputClienteDireccion').value = c.direccion;
+		document.getElementById('selectDireccion').value = c.direccion;
 		document.getElementById('inputDNI').value = c.dni;
 		document.getElementById('inputRTN').value = c.rtn;
 	}
@@ -468,7 +473,7 @@ function cambiarServicioLinea(event) {
 
 function sincronizarClienteManual() {
 	cotizacion.cliente.nombre = document.getElementById('inputClienteNombre').value.trim();
-	cotizacion.cliente.direccion = document.getElementById('inputClienteDireccion').value.trim();
+	cotizacion.cliente.direccion = choiceDireccion.getValue(true)?.trim() || '';
 	cotizacion.cliente.dni = document.getElementById('inputDNI').value.trim();
 	cotizacion.cliente.rtn = document.getElementById('inputRTN').value.trim();
 }
@@ -553,6 +558,7 @@ async function guardarParcial(cot){
 
 		sincronizarClienteManual();
 		const idCliente = await asegurarClienteParcial();
+		const idDireccion = await asegurarDireccion(cot.cliente.direccion);
 		recalcularTotales();
 
 		// ---------------- NUEVA ----------------
@@ -1046,3 +1052,57 @@ function generarCodigo(correlativo) {
 window.editarCamion = (e) => {
 	cotizacion.camion = e.target.value;
 };
+
+function initDropdownDirecciones(valorSeleccionado = null) {
+	if (choiceDireccion) choiceDireccion.destroy();
+
+	const select = document.getElementById('selectDireccion');
+	select.innerHTML = '';
+
+	direcciones.forEach(d => {
+		const opt = document.createElement('option');
+		opt.value = d.direccion;
+		opt.text = d.direccion;
+		select.appendChild(opt);
+	});
+
+	choiceDireccion = new Choices(select, {
+		searchEnabled: true,
+		removeItemButton: true,
+		duplicateItemsAllowed: false,
+		addChoices: true,
+		addItemText: value => `Agregar "${value}" (presiona Enter para agregar)`,
+		shouldSort: false
+	});
+
+	if (valorSeleccionado) {
+		choiceDireccion.setChoiceByValue(valorSeleccionado);
+	}
+}
+
+async function asegurarDireccion(direccionTexto) {
+	if (!direccionTexto) return null;
+
+	const { data: existente } = await supabase
+		.from('direcciones')
+		.select('*')
+		.eq('direccion', direccionTexto)
+		.limit(1)
+		.maybeSingle();
+
+	if (existente) return existente.id;
+
+	const { data, error } = await supabase
+		.from('direcciones')
+		.insert({
+			direccion: direccionTexto,
+			estado: 1
+		})
+		.select()
+		.single();
+
+	if (error) throw error;
+
+	direcciones.push(data); // sincroniza frontend
+	return data.id;
+}
