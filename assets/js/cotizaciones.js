@@ -776,7 +776,7 @@ async function generarPDF(cot) {
 	await new Promise(resolve => img.onload = resolve);
 
 	// Conversión px → mm (170px)
-	const logoHeightMm = 35; // 170px ≈ 45mm
+	const logoHeightMm = 30; // 170px ≈ 45mm
 	const logoWidthMm = (img.width / img.height) * logoHeightMm;
 
 	// Asegurar que nunca exceda los márgenes
@@ -882,8 +882,6 @@ async function generarPDF(cot) {
 		
 		if(i + (lineasPorPagina-1) >= lineasTotales.length){
 			const totalesY = yActual + 5;
-			const labelX = margenIzq + 110;
-			const valorX = margenIzq + 150;
 
 			// Total en letras
 			yActual = totalesY + 25;
@@ -892,8 +890,33 @@ async function generarPDF(cot) {
 
 			// Línea de firma
 			yActual += 20;
-			doc.line(margenIzq+50, yActual, doc.internal.pageSize.getWidth()-margenIzq-50, yActual);
-			doc.text('Firma', centerX, yActual + 7, { align:'center' });
+			/*doc.line(margenIzq+50, yActual, doc.internal.pageSize.getWidth()-margenIzq-50, yActual);
+			doc.text('Firma', centerX, yActual + 7, { align:'center' });*/
+			
+			const firma = new Image();
+			img.src = '../assets/img/Firma.png';
+			await new Promise(resolve => img.onload = resolve);
+
+			// Conversión px → mm (170px)
+			const firmaHeightMm = 34; // 161px ≈ 45mm
+			const firmaWidthMm = (img.width / img.height) * firmaHeightMm;
+
+			// Asegurar que nunca exceda los márgenes
+			const maxWidthFirma = doc.internal.pageSize.getWidth() - margenIzq - margenDer;
+			const finalFirmaWidth = Math.min(firmaWidthMm, maxWidthFirma);
+			const finalFirmaHeight = (finalFirmaWidth / firmaWidthMm) * firmaHeightMm;
+
+			// Centrado horizontal
+			const firmaX = (doc.internal.pageSize.getWidth() - finalFirmaWidth) / 2;
+
+			doc.addImage(
+				img,
+				'PNG',
+				firmaX,
+				10,
+				finalFirmaWidth,
+				finalFirmaHeight
+			);
 		}
 
 		if(i + (lineasPorPagina-1) < lineasTotales.length){
@@ -975,15 +998,6 @@ function numeroALetras(num) {
 	}
 
 	return resultado.trim();
-}
-
-function obtenerPaginas(cot){
-	const paginas = [];
-	const lineasPorPagina = 12;
-	for(let i=0; i<cot.lineas.length; i+=lineasPorPagina){
-		paginas.push(cot.lineas.slice(i,i+lineasPorPagina));
-	}
-	return paginas;
 }
 
 async function anularCotizacion(){
