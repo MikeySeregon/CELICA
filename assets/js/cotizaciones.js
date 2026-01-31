@@ -17,6 +17,7 @@ let cotizacion = {
 	fecha: new Date().toISOString().slice(0, 10),
 	estado: 7, // Parcial
 	id_camion: null,
+	camion: '',
 	cliente: { id_cliente: null, nombre: '', direccion: '', dni: null, rtn: null, es_nuevo: false },
 	lineas: [],
 	totales: { subtotal: 0, isv: 0, total: 0 }
@@ -35,6 +36,7 @@ async function cargarCotizacionExistente(id){
 	cotizacion.fecha = cab.fecha_cotizacion;
 	cotizacion.estado = cab.id_estado;
 	cotizacion.id_camion = cab.id_camion;
+	cotizacion.camion = cab.camion || '';
 
 	document.getElementById('fechaCotizacion').value = cab.fecha_cotizacion;
 
@@ -264,6 +266,7 @@ async function seleccionarCamion(e) {
 	}
 
 	cotizacion.id_camion = id;
+	cotizacion.camion = getSelectedText(e.target);
 	await cargarPreciosCamion(id);
 
 	if (!cotizacion.lineas.find(l => l.es_camion)) {
@@ -358,7 +361,7 @@ function actualizarTabla() {
 			tr.innerHTML = `
 				<td>${i+1}</td>
 				<td>${l.nombre_servicio}</td>
-				<td><input type="text" class="form-control" value="${l.descripcion}" readonly disabled></td>
+				<td><input type="text" class="form-control" value="${cotizacion.camion || l.descripcion}" ${!esEditable() ? 'readonly' : ''} onchange="editarCamion(event)"></td>
 				<td>-</td>
 				<td>-</td>
 				<td>-</td>
@@ -559,6 +562,7 @@ async function guardarParcial(cot){
 				.insert({
 					fecha_cotizacion: cot.fecha,
 					id_camion: cot.id_camion,
+					camion: cot.camion,
 					id_estado: 7,
 					id_cliente: idCliente || null,
 					cliente: cot.cliente.nombre || '',
@@ -587,6 +591,7 @@ async function guardarParcial(cot){
 					id_cliente: idCliente,
 					cliente: cot.cliente.nombre,
 					direccion: cot.cliente.direccion,
+					camion: cot.camion,
 
 					subtotal: cot.totales.subtotal,
 					isv: cot.totales.isv,
@@ -816,13 +821,13 @@ async function generarPDF(cot) {
 	// ---------------- Encabezado COTIZACIÓN ----------------
 	doc.setFontSize(14);
 	doc.setFont('helvetica','bold');
-	doc.text('COTIZACIÓN', centerX, yActual, { align: 'center' });
+	doc.text('COTIZACIÓN #'+generarCodigo(cot.id_cotizacion), centerX, yActual, { align: 'center' });
 	yActual += 7;
 
 	// ---------------- Detalle de Cotización ----------------
 	const lineasTotales = cot.lineas.filter(l => l.id_servicio !== null || l.es_camion);
 	const lineasPorPagina = 12;
-	const camionesLine = cot.lineas.find(l => l.es_camion);
+	/*const camionesLine = cot.lineas.find(l => l.es_camion);*/
 
 	for(let i=0; i<lineasTotales.length; i+=lineasPorPagina-1){
 		const pageLineas = lineasTotales.slice(i, i + lineasPorPagina - 1);
@@ -831,7 +836,7 @@ async function generarPDF(cot) {
 		// Primera fila: camión centrado en descripción
 		body.push([
 			{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
-			{ content: camionesLine.descripcion, styles:{ fontStyle:'bold', halign:'center' } },
+			{ content: cot.camion || '', styles:{ fontStyle:'bold', halign:'center' } },
 			{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
 			{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 		]);
@@ -1030,3 +1035,14 @@ async function asegurarClienteParcial(){
 	clientes.push(data); // sincronizar frontend
 	return data.dni;
 }
+
+function generarCodigo(correlativo) {
+  const prefijo = "CT-";
+  const correlativoFormateado = correlativo.toString().padStart(6, "0");
+
+  return `${prefijo}${correlativoFormateado}`;
+}
+
+window.editarCamion = (e) => {
+	cotizacion.camion = e.target.value;
+};

@@ -49,7 +49,7 @@ function renderTabla(cotizaciones) {
 		const tr = document.createElement('tr');
 
 		tr.innerHTML = `
-			<td>${c.id_cotizacion}</td>
+			<td>${generarCodigo(c.id_cotizacion)}</td>
 			<td>${c.cliente}</td>
 			<td>${c.fecha_cotizacion}</td>
 			<td>${badgeEstado(c.id_estado)}</td>
@@ -331,14 +331,13 @@ async function generarPDF(cot) {
 	// ---------------- Encabezado COTIZACIÓN ----------------
 	doc.setFontSize(12);
 	doc.setFont('helvetica','bold');
-	doc.text('COTIZACIÓN', centerX, yActual, { align: 'center' });
+	doc.text('COTIZACIÓN #'+generarCodigo(cot.id_cotizacion), centerX, yActual, { align: 'center' });
 	yActual += 5;
 
 	// ---------------- Detalle de Cotización ----------------
 	const lineasTotales = cot.lineas.filter(l => l.id_servicio !== null || l.es_camion);
 	const lineasPorPagina = 14;
-	const camionesLine = cot.lineas.find(l => l.es_camion) || { descripcion: '' };
-
+	
 	for(let i=0; i<lineasTotales.length; i+=lineasPorPagina-1){
 		const pageLineas = lineasTotales.slice(i, i + lineasPorPagina - 1);
 		const body = [];
@@ -346,7 +345,7 @@ async function generarPDF(cot) {
 		// Primera fila: camión centrado en descripción
 		body.push([
 			{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
-			{ content: camionesLine.descripcion, styles:{ fontStyle:'bold', halign:'center' } },
+			{ content: cot.camion || '', styles:{ fontStyle:'bold', halign:'center' } },
 			{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
 			{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 		]);
@@ -403,8 +402,6 @@ async function generarPDF(cot) {
 		
 		if(i + (lineasPorPagina-1) >= lineasTotales.length){
 			const totalesY = yActual + 5;
-			const labelX = margenIzq + 110;
-			const valorX = margenIzq + 150;
 
 			// Total en letras
 			yActual = totalesY + 3;
@@ -495,4 +492,11 @@ function numeroALetras(num) {
 	}
 
 	return resultado.trim();
+}
+
+function generarCodigo(correlativo) {
+  const prefijo = "CT-";
+  const correlativoFormateado = correlativo.toString().padStart(6, "0");
+
+  return `${prefijo}${correlativoFormateado}`;
 }

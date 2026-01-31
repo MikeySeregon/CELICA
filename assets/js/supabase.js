@@ -49,6 +49,9 @@ class MiHeader extends HTMLElement {
 						<li class="nav-item">
 							<a class="nav-link" href="clientes.html">Clientes</a>
 						</li>
+						<li class="nav-item">
+							<a class="nav-link" href="direcciones.html">Direcciones</a>
+						</li>
 					</ul>
 					<button id="btn-logout" class="btn btn-outline-light btn-sm">
 						Salir
