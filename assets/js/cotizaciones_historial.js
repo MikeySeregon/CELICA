@@ -228,10 +228,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 				subtotal,
 				isv,
 				total,
-				id_camion,
-				camiones (
-					camion
-				)
+				camion
 			`)
 			.eq('id_cotizacion', idCotizacion)
 			.single();
@@ -252,7 +249,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 
 		const lineaCamion = {
 			cantidad: 1,
-			descripcion: cab.camiones?.camion || 'CAMIÓN NO DEFINIDO',
+			descripcion: cab.camion || 'CAMIÓN NO DEFINIDO',
 			precio_unitario: 0,
 			total_linea: 0,
 			es_camion: true,
@@ -277,6 +274,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 				nombre: cab.cliente,
 				direccion: cab.direccion
 			},
+			camion: cab.camion,
 			lineas: [lineaCamion, ...lineasServicios],
 			totales: {
 				subtotal: Number(cab.subtotal || 0),
@@ -357,7 +355,7 @@ async function generarPDF(cot) {
 		tableWidth: 'auto',
 		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220] },
 		body: [
-			[`Cliente: ${cot.cliente.nombre}`],
+			[`Cliente: ${cot.cliente.nombre} | RTN: ${cot.cliente.rtn}`],
 			[`Dirección: ${cot.cliente.direccion}`],
 			[`Fecha: ${cot.fecha}`]
 		],

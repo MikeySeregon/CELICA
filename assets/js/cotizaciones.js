@@ -815,7 +815,7 @@ async function generarPDF(cot) {
 		tableWidth: 'auto',
 		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220] },
 		body: [
-			[`Cliente: ${cot.cliente.nombre}`],
+			[`Cliente: ${cot.cliente.nombre} | RTN: ${cot.cliente.rtn}`],
 			[`Dirección: ${cot.cliente.direccion}`],
 			[`Fecha: ${cot.fecha}`]
 		],
