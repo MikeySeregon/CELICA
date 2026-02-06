@@ -126,6 +126,8 @@ function badgeEstado(id) {
 	switch (id) {
 		case 7:
 			return `<span class="badge bg-warning text-dark">Parcial</span>`;
+		case 6:
+			return `<span class="badge bg-danger">Anulada</span>`;
 		case 5:
 			return `<span class="badge bg-success">Emitida</span>`;
 		case 8:
