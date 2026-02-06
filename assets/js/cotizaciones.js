@@ -68,7 +68,7 @@ async function cargarCotizacionExistente(id){
 		cotizacion.cliente = {
 			id_cliente: null,
 			nombre: cab.cliente,
-			direccion: cab.direccion,
+			direccion: cotizacion.cliente.direccion,
 			dni: '',
 			rtn: '',
 			es_nuevo: true
@@ -135,7 +135,7 @@ async function initDropdownsEditar() {
 	if (cotizacion.cliente && cotizacion.cliente.dni) {
 		choiceCliente.setChoiceByValue(String(cotizacion.cliente.dni));
 		document.getElementById('inputClienteNombre').value = cotizacion.cliente.nombre;
-		document.getElementById('inputClienteDireccion').value = cotizacion.cliente.direccion;
+		choiceDireccion.setChoiceByValue(cotizacion.cliente.direccion);
 		document.getElementById('inputDNI').value = cotizacion.cliente.dni;
 		document.getElementById('inputRTN').value = cotizacion.cliente.rtn;
 	}
@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	if (modo === 'editar' && idCotizacion) {
 		await cargarCotizacionExistente(idCotizacion);
 		await initDropdownsEditar();
-		await initDropdownDirecciones(cab.direccion || '');
+		await initDropdownDirecciones(cotizacion.cliente.direccion || '');
 	} else {
 		initDropdowns(); // modo nuevo
 	}
@@ -913,7 +913,7 @@ async function generarPDF(cot) {
 				img,
 				'PNG',
 				firmaX,
-				10,
+				yActual,
 				finalFirmaWidth,
 				finalFirmaHeight
 			);
