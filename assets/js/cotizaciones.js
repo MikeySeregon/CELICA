@@ -8,6 +8,7 @@ let servicios = [];
 let preciosServicios = [];
 let direcciones = [];
 let choiceDireccion = null;
+let preciosPorCamion = {}; // cache precios por id_camion
 
 const params = new URLSearchParams(window.location.search);
 const idCotizacion = params.get('id');
@@ -21,7 +22,8 @@ let cotizacion = {
 	id_camion: null,
 	camion: '',
 	cliente: { id_cliente: null, nombre: '', direccion: '', dni: null, rtn: null, es_nuevo: false },
-	lineas: [],
+	lineas: [], // kept for backward compatibility (legacy single-cam usage)
+	camiones: [], // nuevo: lista de camiones con sus lineas
 	totales: { subtotal: 0, isv: 0, total: 0 }
 };
 
@@ -75,35 +77,95 @@ async function cargarCotizacionExistente(id){
 		};
 	}
 
-	const { data: det } = await supabase
-		.from('cotizacion_detalle')
+	// intentar cargar camiones asociados a la cotización
+	const { data: camRows } = await supabase
+		.from('cotizacion_camiones')
 		.select('*')
 		.eq('id_cotizacion', id)
-		.not('id_servicio', 'is', null);
+		.order('orden', { ascending: true });
 
-	cotizacion.lineas = det.map(d => ({
-		id_linea: crypto.randomUUID(),
-		id: d.id,
-		id_servicio: d.id_servicio,
-		descripcion: d.descripcion_servicio,
-		precio_unitario: d.precio_unitario,
-		cantidad: d.cantidad,
-		total_linea: d.total_linea,
-		es_camion: d.id_servicio === null
-	}));
+	if (camRows && camRows.length) {
+		cotizacion.camiones = [];
+		for (const cr of camRows) {
+			const camObj = {
+				id: cr.id,
+				id_camion: cr.id_camion,
+				camion: cr.camion,
+				orden: cr.orden,
+				lineas: []
+			};
 
-	if (!cotizacion.lineas.find(l => l.es_camion)) {
-        cotizacion.lineas.unshift({
-            id_linea: crypto.randomUUID(),
-            id_servicio: null,
-            nombre_servicio: 'Camión',
-            descripcion: camiones.find(c => c.id_camion === cab.id_camion)?.camion || `Camión ${cab.id_camion}`,
-            precio_unitario: 0,
-            cantidad: 0,
-            total_linea: 0,
-            es_camion: true
-        });
-    }
+			const { data: detalles = [] } = await supabase
+				.from('cotizacion_detalle')
+				.select('*')
+				.eq('id_cotizacion_camion', cr.id);
+
+			camObj.lineas = (detalles || []).map(d => ({
+				id_linea: crypto.randomUUID(),
+				id: d.id,
+				id_servicio: d.id_servicio,
+				descripcion: d.descripcion_servicio,
+				precio_unitario: d.precio_unitario,
+				cantidad: d.cantidad,
+				total_linea: d.total_linea,
+				es_camion: d.id_servicio === null
+			}));
+
+			// si no existe la línea camión, añadirla al inicio
+			if (!camObj.lineas.find(l => l.es_camion)) {
+				camObj.lineas.unshift({
+					id_linea: crypto.randomUUID(),
+					id: null,
+					id_servicio: null,
+					descripcion: camObj.camion || `Camión ${cr.id_camion}`,
+					precio_unitario: 0,
+					cantidad: 0,
+					total_linea: 0,
+					es_camion: true
+				});
+			}
+
+			cotizacion.camiones.push(camObj);
+		}
+
+		// compatibilidad: setear primer camión como seleccionado global
+		if (cotizacion.camiones.length) {
+			cotizacion.id_camion = cotizacion.camiones[0].id_camion;
+			cotizacion.camion = cotizacion.camiones[0].camion;
+		}
+
+	} else {
+		// fallback: cargar detalle antiguo (compatibilidad)
+		const { data: det } = await supabase
+			.from('cotizacion_detalle')
+			.select('*')
+			.eq('id_cotizacion', id)
+			.not('id_servicio', 'is', null);
+
+		cotizacion.lineas = det.map(d => ({
+			id_linea: crypto.randomUUID(),
+			id: d.id,
+			id_servicio: d.id_servicio,
+			descripcion: d.descripcion_servicio,
+			precio_unitario: d.precio_unitario,
+			cantidad: d.cantidad,
+			total_linea: d.total_linea,
+			es_camion: d.id_servicio === null
+		}));
+
+		if (!cotizacion.lineas.find(l => l.es_camion)) {
+			cotizacion.lineas.unshift({
+				id_linea: crypto.randomUUID(),
+				id_servicio: null,
+				nombre_servicio: 'Camión',
+				descripcion: camiones.find(c => c.id_camion === cab.id_camion)?.camion || `Camión ${cab.id_camion}`,
+				precio_unitario: 0,
+				cantidad: 0,
+				total_linea: 0,
+				es_camion: true
+			});
+		}
+	}
 	
 	recalcularTotales();
 	actualizarTabla();
@@ -186,9 +248,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 		initDropdowns(); // modo nuevo
 	}
 
-	actualizarTabla();
+	// render inicial (al inicio puede no haber camiones)
+	renderCamionesUI();
 
-	document.getElementById('btnAgregarLinea').addEventListener('click', agregarLineaServicio);
+	// botón global (legacy) informa al usuario que use el botón dentro de cada camión
+	document.getElementById('btnAgregarLinea').addEventListener('click', function(){
+		alert('Use el botón "+ Agregar servicio" dentro de la tarjeta del camión correspondiente.');
+	});
+
+	// botón para agregar camión
+	document.getElementById('btnAgregarCamion').addEventListener('click', agregarCamionSeleccionado);
 	document.getElementById('btnClienteManual').addEventListener('click', clienteManual);
 	document.getElementById('btnGuardar').addEventListener('click', () => guardarParcial(cotizacion));
 	document.getElementById('btnEmitir').addEventListener('click', () => emitirCotizacion(cotizacion));
@@ -231,31 +300,38 @@ async function cargarPreciosCamion(id_camion) {
 		.lte('fecha_inicio', hoy)
 		.gte('fecha_fin', hoy);
 
-	preciosServicios = error ? [] : data || [];
+	preciosPorCamion[id_camion] = error ? [] : data || [];
+
+	// mantener compatibilidad con variables previas cuando corresponda
+	if (!preciosServicios || preciosServicios.length === 0) {
+		preciosServicios = preciosPorCamion[id_camion];
+	}
+
+	return preciosPorCamion[id_camion];
 }
 
 function obtenerPrecioServicio(id_camion, id_servicio) {
-	const p = preciosServicios.find(
-		x => x.id_camion === id_camion && x.id_servicio === id_servicio
-	);
+
+	const precios = preciosPorCamion[id_camion] || preciosServicios || [];
+	const p = precios.find(x => x.id_servicio === id_servicio && (x.id_camion === undefined || x.id_camion === id_camion));
 	return p ? p.precio : 0;
 }
 
-function obtenerServiciosDisponibles(id_linea) {
-	if (!cotizacion.id_camion) return [];
+function obtenerServiciosDisponibles(id_camion, id_linea) {
+	if (!id_camion) return [];
 
-	return preciosServicios
-		.filter(p => p.id_camion === cotizacion.id_camion)
+	const precios = preciosPorCamion[id_camion] || [];
+
+	return precios
 		.map(p => {
 			const s = servicios.find(x => x.id_servicio === p.id_servicio);
 			return s ? { ...s, precio: p.precio } : null;
 		})
 		.filter(Boolean)
-		.filter(s =>
-			!cotizacion.lineas.some(
-				l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea
-			)
-		);
+		.filter(s => {
+			// evitar duplicados solo dentro del mismo camión
+			return !cotizacion.camiones.some(cam => cam.id_camion === id_camion && cam.lineas.some(l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea));
+		});
 }
 
 async function seleccionarCamion(e) {
@@ -264,36 +340,49 @@ async function seleccionarCamion(e) {
 		return;
 	}
 	const id = parseInt(e.target.value);
-	if (cotizacion.id_camion && cotizacion.lineas.some(l => !l.es_camion)) {
+	/*if (cotizacion.id_camion && cotizacion.camiones.some(cam => (cam.lineas||[]).some(l => !l.es_camion))) {
 		alert('No se puede cambiar el camión con servicios agregados.');
 		e.target.value = cotizacion.id_camion;
 		return;
-	}
+	}*/
 
 	cotizacion.id_camion = id;
 	cotizacion.camion = getSelectedText(e.target);
 	await cargarPreciosCamion(id);
 
-	if (!cotizacion.lineas.find(l => l.es_camion)) {
+	// legacy: si no hay camiones añadidos automáticamente, agregar la línea camión principal
+	if (!cotizacion.camiones.length) {
 		agregarLineaCamion();
 		document.getElementById('btnAgregarLinea').disabled = false;
 	}
 
-	actualizarTabla();
+	renderCamionesUI();
 }
 
 function agregarLineaCamion() {
-	if (!cotizacion.lineas.find(l => l.es_camion)) {
-		cotizacion.lineas.unshift({
-			id_linea: crypto.randomUUID(),
-			id_servicio: null,
-			nombre_servicio: 'Camión',
-			descripcion: getSelectedText(document.getElementById('selectCamion')),
-			precio_unitario: 0,
-			cantidad: 0,
-			total_linea: 0,
-			es_camion: true
-		});
+	// Legacy helper: convertir a estructura de camiones si no existe
+	if (!cotizacion.camiones.length) {
+		const sel = document.getElementById('selectCamion');
+		const id_cam = parseInt(sel.value) || cotizacion.id_camion;
+		const camionObj = {
+			id: null,
+			id_camion: id_cam,
+			camion: getSelectedText(document.getElementById('selectCamion')) || cotizacion.camion || '',
+			orden: 1,
+			lineas: [
+				{
+					id_linea: crypto.randomUUID(),
+					id: null,
+					id_servicio: null,
+					descripcion: getSelectedText(document.getElementById('selectCamion')) || cotizacion.camion || '',
+					precio_unitario: 0,
+					cantidad: 0,
+					total_linea: 0,
+					es_camion: true
+				}
+			]
+		};
+		cotizacion.camiones.push(camionObj);
 	}
 }
 
@@ -302,29 +391,170 @@ function getSelectedText(select) {
 }
 
 function agregarLineaServicio() {
-	const disponibles = obtenerServiciosDisponibles(null);
-	if (!disponibles.length) {
-		alert('No hay más servicios disponibles');
-		return;
+	// Legacy global add-line; now use per-camión buttons inside each camión card
+	alert('Use el botón "+ Agregar servicio" dentro de la tarjeta del camión correspondiente.');
+}
+
+function contarLineasTotales(){
+	return cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.length || 0), 0);
+}
+
+function agregarCamionSeleccionado(){
+	const sel = document.getElementById('selectCamion');
+	const id_camion = parseInt(sel.value);
+	if (!id_camion) { alert('Seleccione un camión'); return; }
+
+	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+
+	if (cotizacion.camiones.some(c => c.id_camion === id_camion)) { alert('Camión ya agregado'); return; }
+
+	const camionObj = {
+		id: null,
+		id_camion: id_camion,
+		camion: getSelectedText(sel),
+		orden: cotizacion.camiones.length + 1,
+		lineas: [
+			{
+				id_linea: crypto.randomUUID(),
+				id: null,
+				id_servicio: null,
+				descripcion: getSelectedText(sel),
+				precio_unitario: 0,
+				cantidad: 0,
+				total_linea: 0,
+				es_camion: true
+			}
+		]
+	};
+
+	cotizacion.camiones.push(camionObj);
+	if (!cotizacion.id_camion) {
+		cotizacion.id_camion = id_camion;
+		cotizacion.camion = camionObj.camion;
 	}
 
-	const s = disponibles[0];
-	const precio = obtenerPrecioServicio(cotizacion.id_camion, s.id_servicio);
+	cargarPreciosCamion(id_camion).then(()=>{
+		recalcularTotales();
+		renderCamionesUI();
+	});
+}
 
-	cotizacion.lineas.push({
+function agregarLineaServicioEnCamion(id_camion_or_index){
+	const cam = cotizacion.camiones.find(c=>c.id_camion===id_camion_or_index) || cotizacion.camiones[id_camion_or_index];
+	if (!cam) return;
+	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	cam.lineas.push({
 		id_linea: crypto.randomUUID(),
 		id: null,
 		id_servicio: null,
-		nombre_servicio: '',
 		descripcion: '',
 		precio_unitario: 0,
 		cantidad: 1,
 		total_linea: 0,
 		es_camion: false
 	});
-
 	recalcularTotales();
-	actualizarTabla();
+	renderCamionesUI();
+}
+
+function eliminarCamionPorIndex(idx){
+	if (!confirm('Eliminar este camión y sus líneas?')) return;
+	cotizacion.camiones.splice(idx,1);
+	cotizacion.camiones.forEach((c,i)=>c.orden = i+1);
+	if (cotizacion.camiones.length) {
+		cotizacion.id_camion = cotizacion.camiones[0].id_camion;
+		cotizacion.camion = cotizacion.camiones[0].camion;
+	} else {
+		cotizacion.id_camion = null;
+		cotizacion.camion = '';
+	}
+	recalcularTotales();
+	renderCamionesUI();
+}
+
+function renderCamionesUI(){
+	const container = document.getElementById('camionesContainer');
+	container.innerHTML = '';
+
+	cotizacion.camiones.forEach((cam, idx) => {
+		const card = document.createElement('div');
+		card.className = 'card mb-3';
+		card.innerHTML = `
+			<div class="card-body">
+				<div class="d-flex justify-content-between mb-2">
+					<h5>Camión ${cam.orden}</h5>
+					<div>
+						<button class="btn btn-sm btn-danger" data-idx="${idx}" onclick="eliminarCamionPorIndex(${idx})">Eliminar camión</button>
+					</div>
+				</div>
+				<div class="mb-2">
+					<input type="text" class="form-control" value="${cam.camion}" onchange="(function(e){ cotizacion.camiones[${idx}].camion = e.target.value; renderCamionesUI(); })(event)">
+				</div>
+				<div class="mb-2">
+					<button class="btn btn-sm btn-success" onclick="agregarLineaServicioEnCamion(${cam.id_camion || idx})">+ Agregar servicio</button>
+				</div>
+				<div class="table-responsive">
+					<table class="table table-bordered lineas-table">
+						<thead class="table-light">
+							<tr><th>#</th><th>Servicio</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
+						</thead>
+						<tbody id="cam_${idx}_body">
+						</tbody>
+					</table>
+				</div>
+			</div>
+		`;
+
+		container.appendChild(card);
+
+		const tbody = document.getElementById(`cam_${idx}_body`);
+		tbody.innerHTML = '';
+		cam.lineas.forEach((l, i) => {
+			const tr = document.createElement('tr');
+			if (l.es_camion) {
+				tr.innerHTML = `
+					<td>${i+1}</td>
+					<td>Camión</td>
+					<td><input type="text" class="form-control" value="${l.descripcion}" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].descripcion = e.target.value; })(event)"></td>
+					<td>-</td>
+					<td>-</td>
+					<td>-</td>
+					<td></td>
+				`;
+			} else {
+				tr.innerHTML = `
+					<td>${i+1}</td>
+					<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
+					<td><input type="text" class="form-control" value="${l.descripcion}" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].descripcion = e.target.value; })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].cantidad = parseInt(e.target.value)||0; cotizacion.camiones[${idx}].lineas[${i}].total_linea = redondeoBancario((parseInt(e.target.value)||0) * (cotizacion.camiones[${idx}].lineas[${i}].precio_unitario||0)); renderCamionesUI(); recalcularTotales(); })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].precio_unitario = parseFloat(e.target.value)||0; cotizacion.camiones[${idx}].lineas[${i}].total_linea = redondeoBancario((parseInt(cotizacion.camiones[${idx}].lineas[${i}].cantidad)||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); })(event)"></td>
+					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td><button class="btn btn-sm btn-danger" onclick="(function(){ cotizacion.camiones[${idx}].lineas.splice(${i},1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
+				`;
+			}
+			tbody.appendChild(tr);
+		});
+	});
+
+	// Attach event listeners to selects inside each camión table
+	cotizacion.camiones.forEach((cam, camIdx) => {
+		cam.lineas.forEach((l, lineIdx) => {
+			if (!l.es_camion) {
+				const sel = document.getElementById(`servicio_${l.id_linea}`);
+				if (sel) {
+					if (sel.choicesInstance) sel.choicesInstance.destroy();
+					const choices = new Choices(sel, { searchEnabled: true, placeholder: true, placeholderValue: 'Seleccione una opción', removeItemButton: false, shouldSort: false });
+					sel.choicesInstance = choices;
+					sel.addEventListener('change', function(e){ cambiarServicioEnCamion(e, camIdx, lineIdx); });
+				}
+			}
+		});
+	});
+
+	// actualizar display de totales
+	document.getElementById('subtotal').innerText = cotizacion.totales.subtotal.toFixed(2);
+	document.getElementById('isv').innerText = cotizacion.totales.isv.toFixed(2);
+	document.getElementById('total').innerText = cotizacion.totales.total.toFixed(2);
 }
 
 function clienteManual() {
@@ -375,7 +605,7 @@ function actualizarTabla() {
 		} else {
 			tr.innerHTML = `
 				<td>${i+1}</td>
-				<td>${generarDropdownServicio(l.id_linea, l.id_servicio)}</td>
+				<td>${generarDropdownServicio(cotizacion.id_camion, l.id_linea, l.id_servicio)}</td>
 				<td><input type="text" class="form-control" value="${l.descripcion}" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarDescripcion(event)"></td>
 				<td><input type="number" class="form-control" value="${l.cantidad || 1}" min="1" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarCantidad(event)"></td>
 				<td><input type="number" class="form-control" value="${l.precio_unitario || 0}" min="0" step="0.01" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarPrecio(event)"></td>
@@ -414,8 +644,8 @@ function actualizarTabla() {
 	document.getElementById('total').innerText = cotizacion.totales.total.toFixed(2);
 }
 
-function generarDropdownServicio(id_linea, id_servicio_seleccionado) {
-	const disponibles = obtenerServiciosDisponibles(id_linea);
+function generarDropdownServicio(id_camion, id_linea, id_servicio_seleccionado) {
+	const disponibles = obtenerServiciosDisponibles(id_camion, id_linea);
 	const select = document.createElement('select');
 	select.className = 'form-select';
 	select.id = `servicio_${id_linea}`;
@@ -531,9 +761,13 @@ window.eliminarLinea = (id) => {
 };
 
 function recalcularTotales() {
-	const subtotal = redondeoBancario(
-		cotizacion.lineas.reduce((a, l) => a + (l.total_linea || 0), 0)
-	);
+	let subtotal = 0;
+	if (cotizacion.camiones && cotizacion.camiones.length) {
+		subtotal = cotizacion.camiones.reduce((acc, cam) => acc + (cam.lineas || []).reduce((s, l) => s + (l.total_linea || 0), 0), 0);
+	} else {
+		subtotal = (cotizacion.lineas || []).reduce((a, l) => a + (l.total_linea || 0), 0);
+	}
+	subtotal = redondeoBancario(subtotal);
 	const isv = redondeoBancario(subtotal * 0.15);
 
 	cotizacion.totales = {
@@ -567,8 +801,6 @@ async function guardarParcial(cot){
 				.from('cotizaciones')
 				.insert({
 					fecha_cotizacion: cot.fecha,
-					id_camion: cot.id_camion,
-					camion: cot.camion,
 					id_estado: 7,
 					id_cliente: idCliente || null,
 					cliente: cot.cliente.nombre || '',
@@ -597,7 +829,6 @@ async function guardarParcial(cot){
 					id_cliente: idCliente,
 					cliente: cot.cliente.nombre,
 					direccion: cot.cliente.direccion,
-					camion: cot.camion,
 
 					subtotal: cot.totales.subtotal,
 					isv: cot.totales.isv,
@@ -606,8 +837,8 @@ async function guardarParcial(cot){
 				.eq('id_cotizacion', cot.id_cotizacion);
 		}
 
-		// ---------------- DETALLE ----------------
-		await guardarDetalleCotizacion(cot.id_cotizacion);
+		// ---------------- DETALLE (por camiones) ----------------
+		await guardarDetallePorCamiones(cot.id_cotizacion);
 
 		alert('Cotización guardada');
 	} catch(err){
@@ -616,60 +847,80 @@ async function guardarParcial(cot){
 	}
 }
 
-async function guardarDetalleCotizacion(idCotizacion){
+async function guardarDetallePorCamiones(idCotizacion){
 	if (!idCotizacion) return;
-	const lineasServicio = cotizacion.lineas.filter(l => !l.es_camion);
-	if (!lineasServicio.length) return;
-	// IDs existentes en frontend
-	const idsFrontend = lineasServicio
-		.map(l => l.id)
-		.filter(id => typeof id === 'number');
 
-	// IDs existentes en BD
-	const { data: bdLineas } = await supabase
-		.from('cotizacion_detalle')
-		.select('id')
+	// ---------------- sincronizar cotizacion_camiones ----------------
+	const { data: dbCamiones = [] } = await supabase
+		.from('cotizacion_camiones')
+		.select('*')
 		.eq('id_cotizacion', idCotizacion);
 
-	const idsBD = (bdLineas || [])
-		.map(l => l.id)
-		.filter(id => typeof id === 'number');
+	const idsBDCam = (dbCamiones || []).map(c => c.id).filter(Boolean);
+	const idsFrontendCam = cotizacion.camiones.map(c => c.id).filter(Boolean);
 
-	// ---------------- DELETE ----------------
-	const eliminados = idsBD.filter(id => !idsFrontend.includes(id));
-	if (eliminados.length) {
-		await supabase
-			.from('cotizacion_detalle')
-			.delete()
-			.in('id', eliminados);
+	// eliminar camiones que están en la BD pero no en el frontend (y sus detalles)
+	const camAEliminar = idsBDCam.filter(id => !idsFrontendCam.includes(id));
+	if (camAEliminar.length) {
+		// eliminar detalles asociados
+		await supabase.from('cotizacion_detalle').delete().in('id_cotizacion_camion', camAEliminar);
+		// eliminar camiones
+		await supabase.from('cotizacion_camiones').delete().in('id', camAEliminar);
 	}
 
-	// ---------------- INSERT / UPDATE ----------------
-	for (const l of lineasServicio) {
-		const payload = {
-			id_cotizacion: idCotizacion,
-			id_servicio: l.id_servicio,
-			descripcion_servicio: l.descripcion,
-			precio_unitario: l.precio_unitario,
-			cantidad: l.cantidad,
-			total_linea: l.total_linea
-		};
-
-		if (l.id && idsBD.includes(l.id)) {
-			// UPDATE
-			await supabase
-				.from('cotizacion_detalle')
-				.update(payload)
-				.eq('id', l.id);
+	// insertar/actualizar camiones frontend
+	for (const cam of cotizacion.camiones) {
+		if (cam.id) {
+			// update
+			await supabase.from('cotizacion_camiones').update({ id_camion: cam.id_camion, camion: cam.camion, orden: cam.orden }).eq('id', cam.id);
 		} else {
-			// INSERT
-			const { data } = await supabase
-				.from('cotizacion_detalle')
-				.insert(payload)
-				.select()
-				.single();
+			const { data } = await supabase.from('cotizacion_camiones').insert({ id_cotizacion: idCotizacion, id_camion: cam.id_camion, camion: cam.camion, orden: cam.orden }).select().single();
+			cam.id = data.id;
+		}
 
-			l.id = data.id; // sincronizar
+		// ---------------- sincronizar detalle por camión ----------------
+		const detallesFrontend = (cam.lineas || []).filter(l => !l.es_camion);
+
+		const { data: detallesBD = [] } = await supabase.from('cotizacion_detalle').select('*').eq('id_cotizacion_camion', cam.id);
+		const idsBD = detallesBD.map(d => d.id).filter(Boolean);
+		const idsFrontend = detallesFrontend.map(d => d.id).filter(Boolean);
+
+		// eliminar detalles que ya no existen en frontend
+		const detallesAEliminar = idsBD.filter(id => !idsFrontend.includes(id));
+		if (detallesAEliminar.length) {
+			await supabase.from('cotizacion_detalle').delete().in('id', detallesAEliminar);
+		}
+
+		// insertar/actualizar detalles frontend
+		for (const l of detallesFrontend) {
+			const payload = {
+				id_cotizacion: idCotizacion,
+				id_servicio: l.id_servicio,
+				descripcion_servicio: l.descripcion,
+				precio_unitario: l.precio_unitario,
+				cantidad: l.cantidad,
+				total_linea: l.total_linea,
+				id_cotizacion_camion: cam.id
+			};
+
+			if (l.id && idsBD.includes(l.id)) {
+				await supabase.from('cotizacion_detalle').update(payload).eq('id', l.id);
+			} else {
+				const { data } = await supabase.from('cotizacion_detalle').insert(payload).select().single();
+				l.id = data.id;
+			}
+		}
+
+		// asegurar que exista la línea-camión como detalle (opcional, retro-compatibilidad)
+		const camionLineBD = detallesBD.find(d => d.id_servicio === null);
+		if (!camionLineBD) {
+			// insertar linea camión con id_servicio = null
+			await supabase.from('cotizacion_detalle').insert({ id_cotizacion: idCotizacion, id_servicio: null, descripcion_servicio: cam.camion || '', precio_unitario: 0, cantidad: 0, total_linea: 0, id_cotizacion_camion: cam.id });
+		} else {
+			// actualizar descripcion si cambió
+			if (camionLineBD.descripcion_servicio !== (cam.camion || '')) {
+				await supabase.from('cotizacion_detalle').update({ descripcion_servicio: cam.camion || '' }).eq('id', camionLineBD.id);
+			}
 		}
 	}
 }
@@ -831,7 +1082,16 @@ async function generarPDF(cot) {
 	yActual += 7;
 
 	// ---------------- Detalle de Cotización ----------------
-	const lineasTotales = cot.lineas.filter(l => l.id_servicio !== null || l.es_camion);
+	// Construir lista ordenada: camión, sus servicios, camión2, sus servicios...
+	const lineasTotales = [];
+	(cot.camiones || []).forEach(cam => {
+		// línea camión
+		lineasTotales.push({ es_camion: true, descripcion: cam.camion || '', cantidad: 0, precio_unitario: 0, total_linea: 0 });
+		// luego sus servicios
+		(cam.lineas || []).forEach(l => {
+			if (!l.es_camion) lineasTotales.push(l);
+		});
+	});
 	const lineasPorPagina = 12;
 	/*const camionesLine = cot.lineas.find(l => l.es_camion);*/
 
@@ -839,22 +1099,22 @@ async function generarPDF(cot) {
 		const pageLineas = lineasTotales.slice(i, i + lineasPorPagina - 1);
 		const body = [];
 
-		// Primera fila: camión centrado en descripción
-		body.push([
-			{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
-			{ content: cot.camion || '', styles:{ fontStyle:'bold', halign:'center' } },
-			{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
-			{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
-		]);
-
 		pageLineas.forEach(l => {
-			if(l.es_camion) return; // ya agregada
-			body.push([
-				{ content: l.cantidad.toLocaleString() || '0', styles:{ halign:'right' } },
-				{ content: l.descripcion, styles:{ halign:'left' } },
-				{ content: l.precio_unitario.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
-				{ content: l.total_linea.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
-			]);
+			if (l.es_camion) {
+				body.push([
+					{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
+					{ content: l.descripcion || '', styles:{ fontStyle:'bold', halign:'center' } },
+					{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
+					{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
+				]);
+			} else {
+				body.push([
+					{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
+					{ content: l.descripcion, styles:{ halign:'left' } },
+					{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
+					{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
+				]);
+			}
 		});
 
 		// Totales solo en la última página
@@ -889,17 +1149,17 @@ async function generarPDF(cot) {
 			doc.text(`Son: ${numeroALetras(cot.totales.total)} L 00/100`, centerX, yActual, { align:'center' });
 
 			// Línea de firma
-			yActual += 20;
+			yActual += 5;
 			/*doc.line(margenIzq+50, yActual, doc.internal.pageSize.getWidth()-margenIzq-50, yActual);
 			doc.text('Firma', centerX, yActual + 7, { align:'center' });*/
 			
 			const firma = new Image();
-			img.src = '../assets/img/Firma.png';
-			await new Promise(resolve => img.onload = resolve);
+			firma.src = '../assets/img/Firma.png';
+			await new Promise(resolve => firma.onload = resolve);
 
 			// Conversión px → mm (170px)
 			const firmaHeightMm = 34; // 161px ≈ 45mm
-			const firmaWidthMm = (img.width / img.height) * firmaHeightMm;
+			const firmaWidthMm = (firma.width / firma.height) * firmaHeightMm;
 
 			// Asegurar que nunca exceda los márgenes
 			const maxWidthFirma = doc.internal.pageSize.getWidth() - margenIzq - margenDer;
@@ -910,7 +1170,7 @@ async function generarPDF(cot) {
 			const firmaX = (doc.internal.pageSize.getWidth() - finalFirmaWidth) / 2;
 
 			doc.addImage(
-				img,
+				firma,
 				'PNG',
 				firmaX,
 				yActual,
@@ -1120,3 +1380,36 @@ async function asegurarDireccion(direccionTexto) {
 	direcciones.push(data); // sincroniza frontend
 	return data.id;
 }
+
+function cambiarServicioEnCamion(event, camIdx, lineIdx) {
+	const id_servicio = parseInt(event.target.value);
+	const cam = cotizacion.camiones[camIdx];
+	if (!cam) return;
+	const linea = cam.lineas[lineIdx];
+	if (!linea) return;
+
+	const servicio = servicios.find(s => s.id_servicio === id_servicio);
+	const precioObj = (preciosPorCamion[cam.id_camion] || []).find(p => p.id_servicio === id_servicio);
+
+	if (!servicio || !precioObj) return;
+
+	linea.id_servicio = id_servicio;
+	linea.nombre_servicio = servicio.servicio;
+	linea.descripcion = servicio.descripcion || servicio.servicio;
+	linea.precio_unitario = precioObj.precio || 0;
+	linea.total_linea = redondeoBancario(linea.precio_unitario * (linea.cantidad || 1));
+
+	recalcularTotales();
+	renderCamionesUI();
+}
+
+// Exponer algunas funciones al scope global para uso en atributos onclick (modulo)
+window.agregarCamionSeleccionado = agregarCamionSeleccionado;
+window.agregarLineaServicioEnCamion = agregarLineaServicioEnCamion;
+window.eliminarCamionPorIndex = eliminarCamionPorIndex;
+window.renderCamionesUI = renderCamionesUI;
+window.cambiarServicioEnCamion = cambiarServicioEnCamion;
+window.cotizacion = cotizacion;
+window.redondeoBancario = redondeoBancario;
+window.recalcularTotales = recalcularTotales;
+window.contarLineasTotales = contarLineasTotales;

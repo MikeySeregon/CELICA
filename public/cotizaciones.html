@@ -49,25 +49,15 @@
 				<label>Seleccionar Camión</label>
 				<select id="selectCamion" class="form-select"></select>
 			</div>
+			<div class="col-md-2 d-flex align-items-end">
+				<button id="btnAgregarCamion" class="btn btn-primary w-100">+ Agregar camión</button>
+			</div>
 			<div class="col-md-4 d-flex align-items-end">
-				<button id="btnAgregarLinea" class="btn btn-success w-100" disabled>+ Agregar servicio</button>
+				<button id="btnAgregarLinea" class="btn btn-success w-100" disabled>+ Agregar servicio (por camión)</button>
 			</div>
 		</div>
 
-		<table class="table table-bordered" id="tablaLineas">
-			<thead class="table-light">
-				<tr>
-					<th>#</th>
-					<th>Servicio</th>
-					<th>Descripción</th>
-					<th>Cantidad</th>
-					<th>Precio</th>
-					<th>Total</th>
-					<th>Acciones</th>
-				</tr>
-			</thead>
-			<tbody></tbody>
-		</table>
+		<div id="camionesContainer"></div>
 
 		<div class="text-end mb-3">
 			<div>Subtotal: <span id="subtotal">0.00</span></div>
