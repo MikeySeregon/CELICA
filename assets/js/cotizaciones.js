@@ -229,7 +229,7 @@ async function initDropdownsEditar() {
 	if (cotizacion.id_camion) {
         choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
         choiceCamion.disable();
-		document.getElementById('btnAgregarLinea').disabled = false;
+		/*document.getElementById('btnAgregarLinea').disabled = false;*/
     }
 }
 
@@ -252,9 +252,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 	renderCamionesUI();
 
 	// botón global (legacy) informa al usuario que use el botón dentro de cada camión
-	document.getElementById('btnAgregarLinea').addEventListener('click', function(){
+	/*document.getElementById('btnAgregarLinea').addEventListener('click', function(){
 		alert('Use el botón "+ Agregar servicio" dentro de la tarjeta del camión correspondiente.');
-	});
+	});*/
 
 	// botón para agregar camión
 	document.getElementById('btnAgregarCamion').addEventListener('click', agregarCamionSeleccionado);
@@ -353,7 +353,7 @@ async function seleccionarCamion(e) {
 	// legacy: si no hay camiones añadidos automáticamente, agregar la línea camión principal
 	if (!cotizacion.camiones.length) {
 		agregarLineaCamion();
-		document.getElementById('btnAgregarLinea').disabled = false;
+		/*document.getElementById('btnAgregarLinea').disabled = false;*/
 	}
 
 	renderCamionesUI();
