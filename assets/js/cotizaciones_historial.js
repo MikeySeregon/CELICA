@@ -259,7 +259,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 		// ================= Cabecera =================
 		const { data: cab, error: errCab } = await supabase
 			.from('cotizaciones')
-			.select('*,cliente:clientes(rtn)')
+			.select('*,cliente:clientes(nombre,rtn)')
 			.eq('id_cotizacion', idCotizacion)
 			.single();
 
@@ -276,7 +276,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 			id_cotizacion: cab.id_cotizacion,
 			fecha: cab.fecha_cotizacion,
 			cliente: {
-				nombre: cab.cliente,
+				nombre: cab.cliente.nombre,
 				direccion: cab.direccion,
 				rtn: cab.cliente.rtn
 			},
