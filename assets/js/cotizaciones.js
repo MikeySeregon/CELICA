@@ -475,12 +475,16 @@ function eliminarCamionPorIndex(idx){
 function renderCamionesUI(){
 	const container = document.getElementById('camionesContainer');
 	container.innerHTML = '';
+	container.style.overflow = 'visible';
+	container.style.position = 'relative';
 
 	cotizacion.camiones.forEach((cam, idx) => {
 		const card = document.createElement('div');
 		card.className = 'card mb-3';
+		card.style.overflow = 'visible';
+		card.style.position = 'relative';
 		card.innerHTML = `
-			<div class="card-body">
+			<div class="card-body" style="overflow: visible; position: relative; z-index: 1;">
 				<div class="d-flex justify-content-between mb-2">
 					<h5>Camión ${cam.orden}</h5>
 					<div>
@@ -493,8 +497,8 @@ function renderCamionesUI(){
 				<div class="mb-2">
 					<button class="btn btn-sm btn-success" onclick="agregarLineaServicioEnCamion(${cam.id_camion || idx})">+ Agregar servicio</button>
 				</div>
-				<div class="table-responsive">
-					<table class="table table-bordered lineas-table">
+				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
+					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
 						<thead class="table-light">
 							<tr><th>#</th><th>Servicio</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
 						</thead>
@@ -543,8 +547,21 @@ function renderCamionesUI(){
 				const sel = document.getElementById(`servicio_${l.id_linea}`);
 				if (sel) {
 					if (sel.choicesInstance) sel.choicesInstance.destroy();
-					const choices = new Choices(sel, { searchEnabled: true, placeholder: true, placeholderValue: 'Seleccione una opción', removeItemButton: false, shouldSort: false });
+					const choices = new Choices(sel, { 
+						searchEnabled: true, 
+						placeholder: true, 
+						placeholderValue: 'Seleccione una opción', 
+						removeItemButton: false, 
+						shouldSort: false,
+						maxItemCount: 1
+					});
 					sel.choicesInstance = choices;
+					// Aplicar estilos adicionales al contenedor de Choices creado
+					const choicesContainer = sel.closest('.choices');
+					if (choicesContainer) {
+						choicesContainer.style.position = 'relative';
+						choicesContainer.style.zIndex = '1000';
+					}
 					sel.addEventListener('change', function(e){ cambiarServicioEnCamion(e, camIdx, lineIdx); });
 				}
 			}
@@ -628,10 +645,17 @@ function actualizarTabla() {
 					placeholder: true,
 					placeholderValue: 'Seleccione una opción',
 					removeItemButton: false,
-					shouldSort: false
+					shouldSort: false,
+					maxItemCount: 1
 				});
 
 				select.choicesInstance = choices;
+				// Aplicar estilos adicionales al contenedor de Choices creado
+				const choicesContainer = select.closest('.choices');
+				if (choicesContainer) {
+					choicesContainer.style.position = 'relative';
+					choicesContainer.style.zIndex = '1000';
+				}
 
 				select.addEventListener('change', cambiarServicioLinea);
 			}

@@ -1,0 +1,39 @@
+/* ============================================
+   DROPDOWNS CHOICES.JS
+   ============================================ */
+
+/* Asegurar que el contenedor permite que los dropdowns se desplieguen */
+#camionesContainer .choices {
+	position: relative;
+	z-index: 1;
+}
+
+#camionesContainer .choices__list--dropdown {
+	z-index: 9999 !important;
+}
+
+/* SOLO permitir overflow visible DENTRO de camionesContainer */
+#camionesContainer,
+#camionesContainer .card,
+#camionesContainer .card-body,
+#camionesContainer .table-responsive {
+	overflow: visible !important;
+}
+
+/* ============================================
+   ESTILOS GENERALES
+   ============================================ */
+
+table th, table td {
+	text-align: center;
+	vertical-align: middle;
+}
+
+.readonly {
+	background-color: #f8f9fa;
+}
+
+.lineas-table th,
+.lineas-table td {
+	vertical-align: middle;
+}
