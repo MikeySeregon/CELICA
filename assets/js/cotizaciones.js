@@ -299,7 +299,8 @@ function obtenerPrecioServicio(id_camion, id_servicio) {
 function obtenerServiciosDisponibles(id_camion, id_linea) {
 	if (!id_camion) return [];
 
-	const precios = preciosPorCamion[id_camion] || [];
+	// Preferir precios específicos del camión; fallback a precios globales
+	const precios = preciosPorCamion[id_camion] || preciosServicios || [];
 
 	return precios
 		.map(p => {
@@ -308,8 +309,17 @@ function obtenerServiciosDisponibles(id_camion, id_linea) {
 		})
 		.filter(Boolean)
 		.filter(s => {
-			// evitar duplicados solo dentro del mismo camión
-			return !cotizacion.camiones.some(cam => cam.id_camion === id_camion && cam.lineas.some(l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea));
+			// Buscar el camión (instancia) que contiene la línea actual
+			const camContenedor = cotizacion.camiones.find(cam => (cam.lineas || []).some(l => l.id_linea === id_linea));
+
+			if (camContenedor) {
+				// Evitar duplicados solo dentro de ese mismo camión (instancia)
+				return !(camContenedor.lineas || []).some(l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea);
+			}
+
+			// Si no se encuentra la línea dentro de camiones (caso legacy), mantener comportamiento previo:
+			// evitar duplicados dentro de camiones del mismo modelo (id_camion)
+			return !cotizacion.camiones.some(cam => cam.id_camion === id_camion && (cam.lineas || []).some(l => l.id_servicio === s.id_servicio && l.id_linea !== id_linea));
 		});
 }
 
