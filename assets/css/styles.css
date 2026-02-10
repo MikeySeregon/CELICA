@@ -3,21 +3,56 @@
    ============================================ */
 
 /* Asegurar que el contenedor permite que los dropdowns se desplieguen */
-#camionesContainer .choices {
+.choices {
 	position: relative;
-	z-index: 1;
+	z-index: 20;
 }
 
-#camionesContainer .choices__list--dropdown {
-	z-index: 9999 !important;
+.choices__list--dropdown,
+.choices__list[aria-expanded="true"] {
+	z-index: 9999;
+	position: absolute;
 }
 
 /* SOLO permitir overflow visible DENTRO de camionesContainer */
+/*#camionesContainer,
+#camionesContainer .card,
+#camionesContainer .card-body {
+	overflow: visible !important;
+}*/
 #camionesContainer,
 #camionesContainer .card,
-#camionesContainer .card-body,
+#camionesContainer .card-body {
+	position: relative;
+	overflow: visible;
+	z-index: auto;
+}
+
 #camionesContainer .table-responsive {
 	overflow: visible !important;
+}
+
+.card,
+.card-body,
+.row {
+	z-index: auto !important;
+}
+
+/* Elevar la sección superior del formulario */
+.header-form {
+	position: relative;
+	z-index: 50;
+}
+
+/* Asegurar dropdown visible */
+.header-form .choices__list--dropdown,
+.header-form .choices__list[aria-expanded="true"] {
+	z-index: 9999;
+}
+
+.choices.is-open {
+	position: relative;
+	z-index: 10000;
 }
 
 /* ============================================
