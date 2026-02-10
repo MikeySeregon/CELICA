@@ -111,19 +111,8 @@ async function cargarCotizacionExistente(id){
 				es_camion: d.id_servicio === null
 			}));
 
-			// si no existe la línea camión, añadirla al inicio
-			if (!camObj.lineas.find(l => l.es_camion)) {
-				camObj.lineas.unshift({
-					id_linea: crypto.randomUUID(),
-					id: null,
-					id_servicio: null,
-					descripcion: camObj.camion || `Camión ${cr.id_camion}`,
-					precio_unitario: 0,
-					cantidad: 0,
-					total_linea: 0,
-					es_camion: true
-				});
-			}
+			// Nota: Ya no se crea la línea de camión en el frontend,
+			// se mantiene en BD para retrocompatibilidad pero no se renderiza
 
 			cotizacion.camiones.push(camObj);
 		}
@@ -153,18 +142,8 @@ async function cargarCotizacionExistente(id){
 			es_camion: d.id_servicio === null
 		}));
 
-		if (!cotizacion.lineas.find(l => l.es_camion)) {
-			cotizacion.lineas.unshift({
-				id_linea: crypto.randomUUID(),
-				id_servicio: null,
-				nombre_servicio: 'Camión',
-				descripcion: camiones.find(c => c.id_camion === cab.id_camion)?.camion || `Camión ${cab.id_camion}`,
-				precio_unitario: 0,
-				cantidad: 0,
-				total_linea: 0,
-				es_camion: true
-			});
-		}
+		// Nota: Ya no se crea la línea de camión en el frontend,
+		// se mantiene en BD para retrocompatibilidad pero no se renderiza
 	}
 	
 	recalcularTotales();
@@ -369,18 +348,7 @@ function agregarLineaCamion() {
 			id_camion: id_cam,
 			camion: getSelectedText(document.getElementById('selectCamion')) || cotizacion.camion || '',
 			orden: 1,
-			lineas: [
-				{
-					id_linea: crypto.randomUUID(),
-					id: null,
-					id_servicio: null,
-					descripcion: getSelectedText(document.getElementById('selectCamion')) || cotizacion.camion || '',
-					precio_unitario: 0,
-					cantidad: 0,
-					total_linea: 0,
-					es_camion: true
-				}
-			]
+			lineas: []
 		};
 		cotizacion.camiones.push(camionObj);
 	}
@@ -396,7 +364,8 @@ function agregarLineaServicio() {
 }
 
 function contarLineasTotales(){
-	return cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.length || 0), 0);
+	// No contar las líneas de camión (es_camion: true) en el límite de 12
+	return cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.filter(l => !l.es_camion).length || 0), 0);
 }
 
 function agregarCamionSeleccionado(){
@@ -406,25 +375,12 @@ function agregarCamionSeleccionado(){
 
 	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
 
-	if (cotizacion.camiones.some(c => c.id_camion === id_camion)) { alert('Camión ya agregado'); return; }
-
 	const camionObj = {
 		id: null,
 		id_camion: id_camion,
 		camion: getSelectedText(sel),
 		orden: cotizacion.camiones.length + 1,
-		lineas: [
-			{
-				id_linea: crypto.randomUUID(),
-				id: null,
-				id_servicio: null,
-				descripcion: getSelectedText(sel),
-				precio_unitario: 0,
-				cantidad: 0,
-				total_linea: 0,
-				es_camion: true
-			}
-		]
+		lineas: []
 	};
 
 	cotizacion.camiones.push(camionObj);
@@ -439,8 +395,9 @@ function agregarCamionSeleccionado(){
 	});
 }
 
-function agregarLineaServicioEnCamion(id_camion_or_index){
-	const cam = cotizacion.camiones.find(c=>c.id_camion===id_camion_or_index) || cotizacion.camiones[id_camion_or_index];
+function agregarLineaServicioEnCamion(idx_camion){
+	// Usar siempre el índice para evitar problemas con camiones duplicados
+	const cam = typeof idx_camion === 'number' ? cotizacion.camiones[idx_camion] : null;
 	if (!cam) return;
 	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
 	cam.lineas.push({
@@ -492,10 +449,11 @@ function renderCamionesUI(){
 					</div>
 				</div>
 				<div class="mb-2">
+					<!--<label class="form-label text-muted" style="font-size: 0.9rem;">Nombre/Identificación del camión:</label>-->
 					<input type="text" class="form-control" value="${cam.camion}" onchange="(function(e){ cotizacion.camiones[${idx}].camion = e.target.value; renderCamionesUI(); })(event)">
 				</div>
 				<div class="mb-2">
-					<button class="btn btn-sm btn-success" onclick="agregarLineaServicioEnCamion(${cam.id_camion || idx})">+ Agregar servicio</button>
+					<button class="btn btn-sm btn-success" onclick="agregarLineaServicioEnCamion(${idx})">+ Agregar servicio</button>
 				</div>
 				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
 					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
@@ -513,30 +471,23 @@ function renderCamionesUI(){
 
 		const tbody = document.getElementById(`cam_${idx}_body`);
 		tbody.innerHTML = '';
+		let numFila = 1;
 		cam.lineas.forEach((l, i) => {
+			// No renderizar líneas de camión (es_camion: true)
+			if (l.es_camion) return;
+			
 			const tr = document.createElement('tr');
-			if (l.es_camion) {
-				tr.innerHTML = `
-					<td>${i+1}</td>
-					<td>Camión</td>
-					<td><input type="text" class="form-control" value="${l.descripcion}" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].descripcion = e.target.value; })(event)"></td>
-					<td>-</td>
-					<td>-</td>
-					<td>-</td>
-					<td></td>
-				`;
-			} else {
-				tr.innerHTML = `
-					<td>${i+1}</td>
-					<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
-					<td><input type="text" class="form-control" value="${l.descripcion}" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].descripcion = e.target.value; })(event)"></td>
-					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].cantidad = parseInt(e.target.value)||0; cotizacion.camiones[${idx}].lineas[${i}].total_linea = redondeoBancario((parseInt(e.target.value)||0) * (cotizacion.camiones[${idx}].lineas[${i}].precio_unitario||0)); renderCamionesUI(); recalcularTotales(); })(event)"></td>
-					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ cotizacion.camiones[${idx}].lineas[${i}].precio_unitario = parseFloat(e.target.value)||0; cotizacion.camiones[${idx}].lineas[${i}].total_linea = redondeoBancario((parseInt(cotizacion.camiones[${idx}].lineas[${i}].cantidad)||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); })(event)"></td>
-					<td>${(l.total_linea||0).toFixed(2)}</td>
-					<td><button class="btn btn-sm btn-danger" onclick="(function(){ cotizacion.camiones[${idx}].lineas.splice(${i},1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
-				`;
-			}
+			tr.innerHTML = `
+				<td>${numFila}</td>
+				<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
+				<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
+				<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+				<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+				<td>${(l.total_linea||0).toFixed(2)}</td>
+				<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
+			`;
 			tbody.appendChild(tr);
+			numFila++;
 		});
 	});
 
@@ -562,7 +513,7 @@ function renderCamionesUI(){
 						choicesContainer.style.position = 'relative';
 						choicesContainer.style.zIndex = '1000';
 					}
-					sel.addEventListener('change', function(e){ cambiarServicioEnCamion(e, camIdx, lineIdx); });
+					sel.addEventListener('change', function(e){ cambiarServicioEnCamion(e, camIdx, l.id_linea); });
 				}
 			}
 		});
@@ -1405,11 +1356,11 @@ async function asegurarDireccion(direccionTexto) {
 	return data.id;
 }
 
-function cambiarServicioEnCamion(event, camIdx, lineIdx) {
+function cambiarServicioEnCamion(event, camIdx, id_linea) {
 	const id_servicio = parseInt(event.target.value);
 	const cam = cotizacion.camiones[camIdx];
 	if (!cam) return;
-	const linea = cam.lineas[lineIdx];
+	const linea = cam.lineas.find(l => l.id_linea === id_linea);
 	if (!linea) return;
 
 	const servicio = servicios.find(s => s.id_servicio === id_servicio);

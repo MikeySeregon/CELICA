@@ -78,6 +78,10 @@ function renderTabla(cotizaciones) {
 						onclick="aprobarCotizacion(${c.id_cotizacion})">
 						Aprobar
 					</button>
+					<button class="btn btn-sm btn-danger"
+						onclick="anularCotizacion(${c.id_cotizacion})">
+						Anular
+					</button>
 					`
 					: ''
 				}
@@ -244,6 +248,26 @@ window.aprobarCotizacion = async function (idCotizacion) {
 		if (error) throw error;
 
 		alert('Cotización aprobada correctamente');
+		await cargarCotizaciones(); // refresca tabla
+	} catch (err) {
+		console.error(err);
+		alert('Error aprobando la cotización');
+	}
+};
+
+window.anularCotizacion = async function (idCotizacion) {
+	const confirmar = confirm('¿Desea anular esta cotización? Esta acción no se puede deshacer.');
+	if (!confirmar) return;
+
+	try {
+		const { error } = await supabase
+			.from('cotizaciones')
+			.update({ id_estado: 6 })
+			.eq('id_cotizacion', idCotizacion);
+
+		if (error) throw error;
+
+		alert('Cotización anulada correctamente');
 		await cargarCotizaciones(); // refresca tabla
 	} catch (err) {
 		console.error(err);
