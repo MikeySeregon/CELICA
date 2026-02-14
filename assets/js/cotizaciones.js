@@ -44,8 +44,10 @@ async function cargarCotizacionExistente(id){
 
 	document.getElementById('fechaCotizacion').value = cab.fecha_cotizacion;
 
-	await cargarPreciosCamion(cab.id_camion);
-	/*choiceCamion.setChoiceByValue(String(cab.id_camion));*/
+	// Solo cargar precios si tenemos un id_camion válido
+	if (cab.id_camion) {
+		await cargarPreciosCamion(cab.id_camion);
+	}
 
 	/*cotizacion.lineas = [];*/
 
@@ -108,13 +110,17 @@ async function cargarCotizacionExistente(id){
 				precio_unitario: d.precio_unitario,
 				cantidad: d.cantidad,
 				total_linea: d.total_linea,
-				es_camion: d.id_servicio === null
+				es_camion: d.id_servicio === null,
+				es_tipo5: d.id_servicio === 0 // Línea especial de tipo 5
 			}));
 
 			// Nota: Ya no se crea la línea de camión en el frontend,
 			// se mantiene en BD para retrocompatibilidad pero no se renderiza
 
 			cotizacion.camiones.push(camObj);
+			
+			// Cargar precios para este camión
+			await cargarPreciosCamion(cr.id_camion);
 		}
 
 		// compatibilidad: setear primer camión como seleccionado global
@@ -131,7 +137,7 @@ async function cargarCotizacionExistente(id){
 			.eq('id_cotizacion', id)
 			.not('id_servicio', 'is', null);
 
-		cotizacion.lineas = det.map(d => ({
+		cotizacion.lineas = (det || []).map(d => ({
 			id_linea: crypto.randomUUID(),
 			id: d.id,
 			id_servicio: d.id_servicio,
@@ -139,7 +145,8 @@ async function cargarCotizacionExistente(id){
 			precio_unitario: d.precio_unitario,
 			cantidad: d.cantidad,
 			total_linea: d.total_linea,
-			es_camion: d.id_servicio === null
+			es_camion: d.id_servicio === null,
+			es_tipo5: d.id_servicio === 0 // Línea especial de tipo 5
 		}));
 
 		// Nota: Ya no se crea la línea de camión en el frontend,
@@ -147,7 +154,14 @@ async function cargarCotizacionExistente(id){
 	}
 	
 	recalcularTotales();
-	actualizarTabla();
+	
+	// Si hay camiones cargados, usar renderCamionesUI; si no, usar actualizarTabla (legacy)
+	if (cotizacion.camiones && cotizacion.camiones.length) {
+		renderCamionesUI();
+	} else {
+		actualizarTabla();
+	}
+	
 	if (cotizacion.estado === 6) {
 		document.querySelectorAll('button, input, select')
 			.forEach(el => el.disabled = true);
@@ -249,16 +263,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function cargarDatos() {
 	const hoy = new Date().toISOString().slice(0, 10);
 
-	const [{ data: c }, { data: cam }, { data: s }, { data: p }, { data: d }] = await Promise.all([
+	const [{ data: c }, { data: cam }, { data: s }, { data: p }, { data: d }, { data: tipos }] = await Promise.all([
 		supabase.from('clientes').select('*').eq('estado', 1),
-		supabase.from('camiones').select('*').eq('estado', 1),
+		supabase.from('camiones').select('*, tipos_camion(id_tipo, tipo)').eq('estado', 1),
 		supabase.from('servicios').select('*').eq('estado', 1),
 		supabase.from('precios_servicio')
 			.select('*')
 			.eq('estado', 1)
 			.lte('fecha_inicio', hoy)
 			.gte('fecha_fin', hoy),
-		supabase.from('direcciones').select('*').eq('estado', 1)
+		supabase.from('direcciones').select('*').eq('estado', 1),
+		supabase.from('tipos_camion').select('*').eq('estado', 1)
 	]);
 
 	clientes = c || [];
@@ -368,6 +383,31 @@ function getSelectedText(select) {
 	return select.options[select.selectedIndex]?.text || '';
 }
 
+function obtenerTipoCamion(id_camion) {
+	const camion = camiones.find(c => c.id_camion === id_camion);
+	return camion && camion.tipos_camion ? camion.tipos_camion.id_tipo : null;
+}
+
+function esTipoCinco(id_camion) {
+	return obtenerTipoCamion(id_camion) === 5;
+}
+
+function tieneCamioTipo5() {
+	return cotizacion.camiones.some(c => esTipoCinco(c.id_camion));
+}
+
+function puedoAgregarCamion(id_camion) {
+	// Si el camión a agregar es tipo 5, no puede haber otros camiones
+	if (esTipoCinco(id_camion) && cotizacion.camiones.length > 0) {
+		return false;
+	}
+	// Si ya hay un tipo 5, no puedo agregar más camiones
+	if (tieneCamioTipo5()) {
+		return false;
+	}
+	return true;
+}
+
 function agregarLineaServicio() {
 	// Legacy global add-line; now use per-camión buttons inside each camión card
 	alert('Use el botón "+ Agregar servicio" dentro de la tarjeta del camión correspondiente.');
@@ -382,6 +422,16 @@ function agregarCamionSeleccionado(){
 	const sel = document.getElementById('selectCamion');
 	const id_camion = parseInt(sel.value);
 	if (!id_camion) { alert('Seleccione un camión'); return; }
+
+	// Validar restricciones del tipo 5
+	if (!puedoAgregarCamion(id_camion)) {
+		if (esTipoCinco(id_camion)) {
+			alert('No se puede agregar un servicio general si ya hay camiones seleccioados.');
+		} else {
+			alert('No se pueden agregar camiones cuando hay un servicio general.');
+		}
+		return;
+	}
 
 	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
 
@@ -410,15 +460,20 @@ function agregarLineaServicioEnCamion(idx_camion){
 	const cam = typeof idx_camion === 'number' ? cotizacion.camiones[idx_camion] : null;
 	if (!cam) return;
 	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	
+	// Verificar si es tipo 5 para crear línea especial o normal
+	const esTipo5 = esTipoCinco(cam.id_camion);
+	
 	cam.lineas.push({
 		id_linea: crypto.randomUUID(),
 		id: null,
-		id_servicio: null,
+		id_servicio: esTipo5 ? 0 : null, // 0 para tipo 5, null para líneas normales
 		descripcion: '',
 		precio_unitario: 0,
 		cantidad: 1,
 		total_linea: 0,
-		es_camion: false
+		es_camion: false,
+		es_tipo5: esTipo5 // flag para distinguir estas líneas especiales
 	});
 	recalcularTotales();
 	renderCamionesUI();
@@ -487,15 +542,31 @@ function renderCamionesUI(){
 			if (l.es_camion) return;
 			
 			const tr = document.createElement('tr');
-			tr.innerHTML = `
-				<td>${numFila}</td>
-				<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
-				<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
-				<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
-				<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
-				<td>${(l.total_linea||0).toFixed(2)}</td>
-				<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
-			`;
+			
+			// Verificar si es línea especial de tipo 5
+			if (l.es_tipo5 || l.id_servicio === 0) {
+				// Línea especial: sin dropdown, solo descripción, cantidad y precio
+				tr.innerHTML = `
+					<td>${numFila}</td>
+					<td><em>Sin servicio</em></td>
+					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
+				`;
+			} else {
+				// Línea normal con dropdown de servicio
+				tr.innerHTML = `
+					<td>${numFila}</td>
+					<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
+					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
+					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
+				`;
+			}
 			tbody.appendChild(tr);
 			numFila++;
 		});
@@ -880,7 +951,7 @@ async function guardarDetallePorCamiones(idCotizacion){
 		for (const l of detallesFrontend) {
 			const payload = {
 				id_cotizacion: idCotizacion,
-				id_servicio: l.id_servicio,
+				id_servicio: l.id_servicio ?? null, // Mantener 0 para líneas tipo 5, convertir undefined/null a null
 				descripcion_servicio: l.descripcion,
 				precio_unitario: l.precio_unitario,
 				cantidad: l.cantidad,
