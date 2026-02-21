@@ -544,12 +544,13 @@ async function generarPDF(cot) {
 			const totalesY = yActual + 5;
 
 			// Total en letras
-			yActual = totalesY + 25;
+			yActual = 240;//totalesY + 25;
 			doc.setFont('helvetica','normal');
-			doc.text(`Son: ${numeroALetras(cot.totales.total)} L 00/100`, centerX, yActual, { align:'center' });
+			let decimalLetras = Math.round((cot.totales.total % 1) * 100);
+			doc.text(`Son: ${numeroALetras(cot.totales.total)} L ${decimalLetras.toString().padStart(2, '0')}/100`, centerX, yActual, { align:'center' });
 
 			// Línea de firma
-			yActual += 5;
+			//yActual += 5;
 			/*doc.line(margenIzq+50, yActual, doc.internal.pageSize.getWidth()-margenIzq-50, yActual);
 			doc.text('Firma', centerX, yActual + 7, { align:'center' });*/
 			
@@ -573,7 +574,7 @@ async function generarPDF(cot) {
 				firma,
 				'PNG',
 				firmaX,
-				yActual,
+				245,
 				finalFirmaWidth,
 				finalFirmaHeight
 			);
