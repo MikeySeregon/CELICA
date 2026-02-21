@@ -199,6 +199,27 @@ window.verDetalle = async function (idCotizacion) {
 					tbody.appendChild(tr);
 				});
 			}
+
+			// Cargar líneas especiales (sin camión asociado)
+			const { data: especialesBD = [] } = await supabase
+				.from('cotizacion_detalle')
+				.select('*')
+				.eq('id_cotizacion', idCotizacion)
+				.is('id_cotizacion_camion', null)
+				.in('id_servicio', [100, 101]);
+
+			if (especialesBD && especialesBD.length > 0) {
+				especialesBD.forEach(l => {
+					let tr = document.createElement('tr');
+					tr.innerHTML = `
+						<td></td>
+						<td style="text-align:center; font-weight:bold">${l.descripcion_servicio}</td>
+						<td></td>
+						<td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
+					`;
+					tbody.appendChild(tr);
+				});
+			}
 		} else {
 			// Fallback: cargar como formato antiguo (compatibilidad)
 			const { data: det, error: errDet } = await supabase
@@ -352,6 +373,37 @@ window.generarPDFHistorial = async function (idCotizacion) {
 					lineas: lineas
 				});
 			}
+
+			// Cargar líneas especiales (sin camión asociado)
+			const { data: especialesBD = [] } = await supabase
+				.from('cotizacion_detalle')
+				.select('*')
+				.eq('id_cotizacion', idCotizacion)
+				.is('id_cotizacion_camion', null)
+				.in('id_servicio', [100, 101]);
+
+			if (especialesBD && especialesBD.length > 0) {
+				const lineasEspeciales = especialesBD.map(d => ({
+					id_linea: `det_${d.id}`,
+					id: d.id,
+					id_servicio: d.id_servicio,
+					descripcion: d.descripcion_servicio || '',
+					precio_unitario: Number(d.precio_unitario || 0),
+					cantidad: Number(d.cantidad || 0),
+					total_linea: Number(d.total_linea || 0),
+					es_camion: false,
+					es_serv_porcentaje: true
+				}));
+
+				cot.camiones.push({
+					id: null,
+					id_camion: 0,
+					camion: 'Porcentaje de servicio',
+					orden: cot.camiones.length + 1,
+					lineas: lineasEspeciales,
+					es_serv_porcentaje: true
+				});
+			}
 		} else {
 			// Fallback: cargar detalle antiguo (compatibilidad)
 			const { data: det = [] } = await supabase
@@ -484,10 +536,19 @@ async function generarPDF(cot) {
 
 	// ---------------- Detalle de Cotización ----------------
 	// Construir lista ordenada: camión, sus servicios, camión2, sus servicios...
+	// Las líneas especiales van al final sin encabezado
 	const lineasTotales = [];
-	(cot.camiones || []).forEach(cam => {
-		// línea camión
-		lineasTotales.push({ es_camion: true, descripcion: cam.camion || '', cantidad: 0, precio_unitario: 0, total_linea: 0 });
+	const orderedCamiones = [
+		...(cot.camiones || []).filter(c => !c.es_serv_porcentaje),
+		...(cot.camiones || []).filter(c => c.es_serv_porcentaje)
+	];
+	
+	orderedCamiones.forEach(cam => {
+		// No agregar línea de encabezado para la sección especial
+		if (!cam.es_serv_porcentaje) {
+			// línea camión
+			lineasTotales.push({ es_camion: true, descripcion: cam.camion || '', cantidad: 0, precio_unitario: 0, total_linea: 0 });
+		}
 		// luego sus servicios
 		(cam.lineas || []).forEach(l => {
 			if (!l.es_camion) lineasTotales.push(l);
@@ -508,12 +569,22 @@ async function generarPDF(cot) {
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 				]);
 			} else {
-				body.push([
-					{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
-					{ content: l.descripcion, styles:{ halign:'left' } },
-					{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
-					{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
-				]);
+				// Si es la línea especial (porcentaje o cantidad según especificación), centrar descripción y solo mostrar valor total
+				if (l.id_servicio === 100 || l.id_servicio === 101 || l.es_serv_porcentaje) {
+					body.push([
+						{ content: '', styles:{ halign:'right' } },
+						{ content: l.descripcion, styles:{ halign:'center', fontStyle:'bold' } },
+						{ content: '', styles:{ halign:'right' } },
+						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
+					]);
+				} else {
+					body.push([
+						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
+						{ content: l.descripcion, styles:{ halign:'left' } },
+						{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
+						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
+					]);
+				}
 			}
 		});
 

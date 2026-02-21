@@ -111,8 +111,15 @@ async function cargarCotizacionExistente(id){
 				cantidad: d.cantidad,
 				total_linea: d.total_linea,
 				es_camion: d.id_servicio === null,
-				es_tipo5: d.id_servicio === 0 // Línea especial de tipo 5
+				es_tipo5: d.id_servicio === 0, // Línea especial de tipo 5
+				es_serv_porcentaje: d.id_servicio === 100 || d.id_servicio === 101,
+				modo: d.id_servicio === 100 ? 'porcentaje' : (d.id_servicio === 101 ? 'cantidad' : null)
 			}));
+
+			// Marcar si este camión es la sección especial (id_camion === 0 es la sección especial)
+			if (cr.id_camion === 0) {
+				camObj.es_serv_porcentaje = true;
+			}
 
 			// Nota: Ya no se crea la línea de camión en el frontend,
 			// se mantiene en BD para retrocompatibilidad pero no se renderiza
@@ -127,6 +134,44 @@ async function cargarCotizacionExistente(id){
 		if (cotizacion.camiones.length) {
 			cotizacion.id_camion = cotizacion.camiones[0].id_camion;
 			cotizacion.camion = cotizacion.camiones[0].camion;
+		}
+
+		// cargar líneas especiales (sin id_cotizacion_camion)
+		const { data: especialesBD = [] } = await supabase
+			.from('cotizacion_detalle')
+			.select('*')
+			.eq('id_cotizacion', id)
+			.is('id_cotizacion_camion', null)
+			.in('id_servicio', [100, 101]);
+
+		if (especialesBD && especialesBD.length > 0) {
+			// si existe sección especial, cargar sus líneas
+			let especialSection = cotizacion.camiones.find(c => c.es_serv_porcentaje);
+			if (!especialSection) {
+				// crear sección especial si no existe
+				especialSection = {
+					id: null,
+					id_camion: 0,
+					camion: 'Porcentaje de servicio',
+					orden: null,
+					es_serv_porcentaje: true,
+					lineas: []
+				};
+				cotizacion.camiones.push(especialSection);
+			}
+
+			especialSection.lineas = especialesBD.map(d => ({
+				id_linea: crypto.randomUUID(),
+				id: d.id,
+				id_servicio: d.id_servicio,
+				descripcion: d.descripcion_servicio,
+				precio_unitario: d.precio_unitario,
+				cantidad: d.cantidad,
+				total_linea: d.total_linea,
+				es_camion: false,
+				es_serv_porcentaje: true,
+				modo: d.id_servicio === 100 ? 'porcentaje' : 'cantidad'
+			}));
 		}
 
 	} else {
@@ -251,6 +296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	// botón para agregar camión
 	document.getElementById('btnAgregarCamion').addEventListener('click', agregarCamionSeleccionado);
+	document.getElementById('btnAgregarPorcentajeServicio')?.addEventListener('click', agregarServicioPorcentaje);
 	document.getElementById('btnClienteManual').addEventListener('click', clienteManual);
 	document.getElementById('btnGuardar').addEventListener('click', () => guardarParcial(cotizacion));
 	document.getElementById('btnEmitir').addEventListener('click', () => emitirCotizacion(cotizacion));
@@ -455,6 +501,59 @@ function agregarCamionSeleccionado(){
 	});
 }
 
+function agregarServicioPorcentaje(){
+	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	// Solo permitir una sección especial
+	if (cotizacion.camiones.some(c => c.es_serv_porcentaje)) { alert('Ya existe una sección de "Porcentaje de servicio"'); return; }
+
+	const camObj = {
+		id: null,
+		id_camion: 0, // usar 0 para identificar la sección especial (no puede ser null)
+		camion: 'Porcentaje de servicio',
+		orden: cotizacion.camiones.length + 1,
+		lineas: [
+			{
+				id_linea: crypto.randomUUID(),
+				id: null,
+				id_servicio: 101, // por defecto modo cantidad
+				descripcion: 'Porcentaje de servicio',
+				precio_unitario: 0,
+				cantidad: 0,
+				total_linea: 0,
+				es_camion: false,
+				es_serv_porcentaje: true,
+				modo: 'cantidad' // 'cantidad' o 'porcentaje'
+			}
+		],
+		es_serv_porcentaje: true
+	};
+
+	cotizacion.camiones.push(camObj);
+	recalcularTotales();
+	renderCamionesUI();
+}
+
+function cambiarModoServicioEspecial(camIdx, id_linea, modo) {
+	const cam = cotizacion.camiones[camIdx];
+	if (!cam) return;
+	const linea = cam.lineas.find(l => l.id_linea === id_linea);
+	if (!linea) return;
+	linea.modo = modo;
+	linea.id_servicio = modo === 'porcentaje' ? 100 : 101;
+	// reset values sensibly
+	if (modo === 'porcentaje') {
+		linea.cantidad = parseInt(linea.cantidad) || 0; // porcentaje value (integer)
+		linea.precio_unitario = linea.precio_unitario || 0;
+	} else {
+		// cantidad mode: cantidad representa un monto (decimal) to add directly to subtotal
+		linea.cantidad = parseFloat(linea.cantidad) || 0;
+		linea.precio_unitario = 0;
+		linea.total_linea = redondeoBancario(linea.cantidad || 0);
+	}
+	recalcularTotales();
+	renderCamionesUI();
+}
+
 function agregarLineaServicioEnCamion(idx_camion){
 	// Usar siempre el índice para evitar problemas con camiones duplicados
 	const cam = typeof idx_camion === 'number' ? cotizacion.camiones[idx_camion] : null;
@@ -505,7 +604,35 @@ function renderCamionesUI(){
 		card.className = 'card mb-3';
 		card.style.overflow = 'visible';
 		card.style.position = 'relative';
-		card.innerHTML = `
+		let cardBodyHtml = '';
+			if (cam.es_serv_porcentaje) {
+			cardBodyHtml = `
+			<div class="card-body" style="overflow: visible; position: relative; z-index: 1;">
+				<div class="d-flex justify-content-between mb-2">
+					<h5>Porcentaje de servicio</h5>
+					<div>
+						<button class="btn btn-sm btn-danger" data-idx="${idx}" onclick="eliminarCamionPorIndex(${idx})">Eliminar sección</button>
+					</div>
+				</div>
+				<div class="mb-2 d-flex gap-2">
+					<select class="form-select" onchange="(function(e){ cambiarModoServicioEspecial(${idx}, '${cam.lineas[0].id_linea}', e.target.value); })(event)">
+						<option value="cantidad" ${cam.lineas[0].modo==='cantidad' ? 'selected' : ''}>Cantidad</option>
+						<option value="porcentaje" ${cam.lineas[0].modo==='porcentaje' ? 'selected' : ''}>Porcentaje</option>
+					</select>
+				</div>
+				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
+					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
+						<thead class="table-light">
+							<tr><th>#</th><th>Servicio</th><th>Descripción</th><th>Cantidad / %</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
+						</thead>
+						<tbody id="cam_${idx}_body">
+						</tbody>
+					</table>
+				</div>
+			</div>
+			`;
+		} else {
+			cardBodyHtml = `
 			<div class="card-body" style="overflow: visible; position: relative; z-index: 1;">
 				<div class="d-flex justify-content-between mb-2">
 					<h5>Camión ${cam.orden}</h5>
@@ -514,7 +641,6 @@ function renderCamionesUI(){
 					</div>
 				</div>
 				<div class="mb-2">
-					<!--<label class="form-label text-muted" style="font-size: 0.9rem;">Nombre/Identificación del camión:</label>-->
 					<input type="text" class="form-control" value="${cam.camion}" onchange="(function(e){ cotizacion.camiones[${idx}].camion = e.target.value; renderCamionesUI(); })(event)">
 				</div>
 				<div class="mb-2">
@@ -530,8 +656,10 @@ function renderCamionesUI(){
 					</table>
 				</div>
 			</div>
-		`;
+			`;
+		}
 
+		card.innerHTML = cardBodyHtml;
 		container.appendChild(card);
 
 		const tbody = document.getElementById(`cam_${idx}_body`);
@@ -543,8 +671,19 @@ function renderCamionesUI(){
 			
 			const tr = document.createElement('tr');
 			
-			// Verificar si es línea especial de tipo 5
-			if (l.es_tipo5 || l.id_servicio === 0) {
+			// Verificar si es línea especial de tipo 5 o servicio especial (porcentaje/cantidad)
+			if (l.es_serv_porcentaje) {
+				// Línea especial de porcentaje/cantidad: descripción fija + modo específico
+				tr.innerHTML = `
+					<td>${numFila}</td>
+					<td><em>Especial</em></td>
+					<td>Porcentaje de servicio</td>
+					<td>${l.modo === 'porcentaje' ? `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.precio_unitario = 0; recalcularTotales(); renderCamionesUI(); } })(event)">` : `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario(linea.cantidad||0); recalcularTotales(); renderCamionesUI(); } })(event)">`}</td>
+					<td></td>
+					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
+				`;
+			} else if (l.es_tipo5 || l.id_servicio === 0) {
 				// Línea especial: sin dropdown, solo descripción, cantidad y precio
 				tr.innerHTML = `
 					<td>${numFila}</td>
@@ -817,13 +956,42 @@ window.eliminarLinea = (id) => {
 };
 
 function recalcularTotales() {
-	let subtotal = 0;
-	if (cotizacion.camiones && cotizacion.camiones.length) {
-		subtotal = cotizacion.camiones.reduce((acc, cam) => acc + (cam.lineas || []).reduce((s, l) => s + (l.total_linea || 0), 0), 0);
-	} else {
-		subtotal = (cotizacion.lineas || []).reduce((a, l) => a + (l.total_linea || 0), 0);
-	}
-	subtotal = redondeoBancario(subtotal);
+	// Calcular subtotal base excluyendo líneas especiales (porcentaje y cantidad)
+	let baseSubtotal = 0;
+	const todasLineas = (cotizacion.camiones || []).flatMap(cam => cam.lineas || []);
+
+	todasLineas.forEach(l => {
+		const isEspecial = l.es_serv_porcentaje || l.id_servicio === 100 || l.id_servicio === 101;
+		if (!l.es_camion && !isEspecial) {
+			baseSubtotal += (l.total_linea || 0);
+		}
+	});
+
+	baseSubtotal = redondeoBancario(baseSubtotal);
+
+	// Recalcular líneas de porcentaje (si existen)
+	todasLineas.forEach(l => {
+		const isPorc = l.es_serv_porcentaje && l.modo === 'porcentaje' || l.id_servicio === 100;
+		if (isPorc) {
+			const pct = parseInt(l.cantidad) || 0; // cantidad almacena el porcentaje (entero)
+			l.precio_unitario = baseSubtotal; // según especificación
+			l.total_linea = redondeoBancario(baseSubtotal * (pct / 100));
+		} else if (l.es_serv_porcentaje && l.modo === 'cantidad') {
+			// En modo 'cantidad' la cantidad representa un monto a sumar directamente al subtotal
+			l.total_linea = redondeoBancario(l.cantidad || 0);
+		}
+	});
+
+	// Ahora subtotal final = baseSubtotal (con líneas normales) + líneas especiales de cantidad y porcentaje
+	let subtotalEspeciales = 0;
+	todasLineas.forEach(l => {
+		const isPorc = l.es_serv_porcentaje && l.modo === 'porcentaje' || l.id_servicio === 100;
+		const esCantidad = l.es_serv_porcentaje && l.modo === 'cantidad' || l.id_servicio === 101;
+		if (!l.es_camion && (isPorc || esCantidad)) {
+			subtotalEspeciales += (l.total_linea || 0);
+		}
+	});
+	let subtotal = redondeoBancario(baseSubtotal + subtotalEspeciales);
 	const isv = redondeoBancario(subtotal * 0.15);
 
 	cotizacion.totales = {
@@ -924,14 +1092,23 @@ async function guardarDetallePorCamiones(idCotizacion){
 		await supabase.from('cotizacion_camiones').delete().in('id', camAEliminar);
 	}
 
-	// insertar/actualizar camiones frontend
-	for (const cam of cotizacion.camiones) {
+	// insertar/actualizar camiones frontend (excluir sección especial)
+	for (const cam of cotizacion.camiones.filter(c => !c.es_serv_porcentaje)) {
 		if (cam.id) {
 			// update
 			await supabase.from('cotizacion_camiones').update({ id_camion: cam.id_camion, camion: cam.camion, orden: cam.orden }).eq('id', cam.id);
 		} else {
-			const { data } = await supabase.from('cotizacion_camiones').insert({ id_cotizacion: idCotizacion, id_camion: cam.id_camion, camion: cam.camion, orden: cam.orden }).select().single();
-			cam.id = data.id;
+			const { data, error } = await supabase.from('cotizacion_camiones').insert({ id_cotizacion: idCotizacion, id_camion: cam.id_camion, camion: cam.camion, orden: cam.orden }).select();
+			if (error) {
+				console.error('Error insertando camión:', error);
+				throw error;
+			}
+			if (data && data.length > 0) {
+				cam.id = data[0].id;
+			} else {
+				console.error('No se devolvió ID para el camión insertado');
+				throw new Error('No se pudo obtener el ID del camión insertado');
+			}
 		}
 
 		// ---------------- sincronizar detalle por camión ----------------
@@ -952,12 +1129,30 @@ async function guardarDetallePorCamiones(idCotizacion){
 			const payload = {
 				id_cotizacion: idCotizacion,
 				id_servicio: l.id_servicio ?? null, // Mantener 0 para líneas tipo 5, convertir undefined/null a null
-				descripcion_servicio: l.descripcion,
+				descripcion_servicio: (l.es_serv_porcentaje ? 'Porcentaje de servicio' : l.descripcion),
 				precio_unitario: l.precio_unitario,
 				cantidad: l.cantidad,
 				total_linea: l.total_linea,
 				id_cotizacion_camion: cam.id
 			};
+
+			// Ajustes para la línea especial de servicio (porcentaje/cantidad)
+			if (l.es_serv_porcentaje) {
+				if (l.modo === 'porcentaje') {
+					payload.id_servicio = 100;
+					// cantidad almacena el porcentaje
+					payload.cantidad = l.cantidad || 0;
+					// precio_unitario debe guardar el subtotal previo (ya calculado en recalcularTotales)
+					payload.precio_unitario = l.precio_unitario || 0;
+					payload.total_linea = l.total_linea || 0;
+				} else {
+					// modo cantidad: línea normal, guardar como id_servicio = 101
+					payload.id_servicio = 101;
+					payload.cantidad = l.cantidad || 0;
+					payload.precio_unitario = l.precio_unitario || 0;
+					payload.total_linea = l.total_linea || 0;
+				}
+			}
 
 			if (l.id && idsBD.includes(l.id)) {
 				await supabase.from('cotizacion_detalle').update(payload).eq('id', l.id);
@@ -976,6 +1171,49 @@ async function guardarDetallePorCamiones(idCotizacion){
 			// actualizar descripcion si cambió
 			if (camionLineBD.descripcion_servicio !== (cam.camion || '')) {
 				await supabase.from('cotizacion_detalle').update({ descripcion_servicio: cam.camion || '' }).eq('id', camionLineBD.id);
+			}
+		}
+	}
+
+	// guardar líneas especiales directamente en cotizacion_detalle sin id_cotizacion_camion
+	const especialSection = cotizacion.camiones.find(c => c.es_serv_porcentaje);
+	if (especialSection && especialSection.lineas.length > 0) {
+		// obtener líneas especiales existentes en BD
+		const { data: especialesBD = [] } = await supabase
+			.from('cotizacion_detalle')
+			.select('*')
+			.eq('id_cotizacion', idCotizacion)
+			.is('id_cotizacion_camion', null)
+			.in('id_servicio', [100, 101]);
+		
+		const idsBD = (especialesBD || []).map(d => d.id).filter(Boolean);
+		const idsFrontend = especialSection.lineas.map(l => l.id).filter(Boolean);
+
+		// eliminar líneas especiales que ya no existen en frontend
+		const especialesAEliminar = idsBD.filter(id => !idsFrontend.includes(id));
+		if (especialesAEliminar.length) {
+			await supabase.from('cotizacion_detalle').delete().in('id', especialesAEliminar);
+		}
+
+		// insertar/actualizar líneas especiales
+		for (const linea of especialSection.lineas) {
+			const payloadEspecial = {
+				id_cotizacion: idCotizacion,
+				id_cotizacion_camion: null,
+				descripcion_servicio: 'Porcentaje de servicio',
+				cantidad: linea.cantidad,
+				precio_unitario: linea.precio_unitario,
+				total_linea: linea.total_linea || 0,
+				id_servicio: linea.id_servicio || 101
+			};
+
+			if (linea.id && idsBD.includes(linea.id)) {
+				// update
+				await supabase.from('cotizacion_detalle').update(payloadEspecial).eq('id', linea.id);
+			} else {
+				// insert
+				const { data } = await supabase.from('cotizacion_detalle').insert(payloadEspecial).select().single();
+				linea.id = data.id;
 			}
 		}
 	}
@@ -1140,9 +1378,17 @@ async function generarPDF(cot) {
 	// ---------------- Detalle de Cotización ----------------
 	// Construir lista ordenada: camión, sus servicios, camión2, sus servicios...
 	const lineasTotales = [];
-	(cot.camiones || []).forEach(cam => {
-		// línea camión
-		lineasTotales.push({ es_camion: true, descripcion: cam.camion || '', cantidad: 0, precio_unitario: 0, total_linea: 0 });
+	const orderedCamiones = [
+		...(cot.camiones || []).filter(c => !c.es_serv_porcentaje),
+		...(cot.camiones || []).filter(c => c.es_serv_porcentaje)
+	];
+
+	orderedCamiones.forEach(cam => {
+		// No agregar línea de encabezado para la sección especial
+		if (!cam.es_serv_porcentaje) {
+			// línea camión
+			lineasTotales.push({ es_camion: true, descripcion: cam.camion || '', cantidad: 0, precio_unitario: 0, total_linea: 0 });
+		}
 		// luego sus servicios
 		(cam.lineas || []).forEach(l => {
 			if (!l.es_camion) lineasTotales.push(l);
@@ -1164,12 +1410,22 @@ async function generarPDF(cot) {
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 				]);
 			} else {
-				body.push([
-					{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
-					{ content: l.descripcion, styles:{ halign:'left' } },
-					{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
-					{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
-				]);
+				// Si es la línea especial (porcentaje o cantidad según especificación), centrar descripción y solo mostrar valor total
+				if (l.id_servicio === 100 || l.id_servicio === 101 || l.es_serv_porcentaje) {
+					body.push([
+						{ content: '', styles:{ halign:'right' } },
+						{ content: l.descripcion, styles:{ halign:'center', fontStyle:'bold' } },
+						{ content: '', styles:{ halign:'right' } },
+						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
+					]);
+				} else {
+					body.push([
+						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
+						{ content: l.descripcion, styles:{ halign:'left' } },
+						{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
+						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
+					]);
+				}
 			}
 		});
 
@@ -1466,6 +1722,8 @@ window.agregarLineaServicioEnCamion = agregarLineaServicioEnCamion;
 window.eliminarCamionPorIndex = eliminarCamionPorIndex;
 window.renderCamionesUI = renderCamionesUI;
 window.cambiarServicioEnCamion = cambiarServicioEnCamion;
+window.agregarServicioPorcentaje = agregarServicioPorcentaje;
+window.cambiarModoServicioEspecial = cambiarModoServicioEspecial;
 window.cotizacion = cotizacion;
 window.redondeoBancario = redondeoBancario;
 window.recalcularTotales = recalcularTotales;
