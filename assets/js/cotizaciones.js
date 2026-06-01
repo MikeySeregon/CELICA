@@ -59,7 +59,7 @@ async function cargarCotizacionExistente(id){
 		cotizacion.cliente = {
 			id_cliente: clienteBD.dni,
 			nombre: clienteBD.nombre_legal,
-			direccion: clienteBD.direccion,
+			direccion: cab.direccion,
 			dni: clienteBD.dni,
 			rtn: clienteBD.rtn,
 			es_nuevo: false
@@ -244,31 +244,44 @@ async function initDropdownsEditar() {
 	let opcionesCamiones = camiones.map(c => ({ value: c.id_camion, label: c.camion }));
 
 	if (cotizacion.id_camion && !camiones.some(c => c.id_camion === cotizacion.id_camion)) {
-        opcionesCamiones.push({
-            value: cotizacion.id_camion,
-            label: `Camión ${cotizacion.id_camion} (inactivo)`
-        });
-    }
+		opcionesCamiones.push({
+			value: cotizacion.id_camion,
+			label: `Camión ${cotizacion.id_camion} (inactivo)`
+		});
+	}
 
 	if (choiceCamion) choiceCamion.destroy();
 
 	const selectCamionElem = document.getElementById('selectCamion');
-    selectCamionElem.innerHTML = '';
-    opcionesCamiones.forEach(op => {
-        const option = document.createElement('option');
-        option.value = op.value;
-        option.text = op.label;
-        selectCamionElem.add(option);
-    });
+	selectCamionElem.innerHTML = '';
+	opcionesCamiones.forEach(op => {
+		const option = document.createElement('option');
+		option.value = op.value;
+		option.text = op.label;
+		selectCamionElem.add(option);
+	});
 	selectCamionElem.disabled = true;
 
 	choiceCamion = new Choices(selectCamionElem, { searchEnabled: true });
 
 	if (cotizacion.id_camion) {
-        choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
-        choiceCamion.disable();
+		choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
+		choiceCamion.disable();
 		/*document.getElementById('btnAgregarLinea').disabled = false;*/
-    }
+	}
+
+	if (cotizacion.id_camion) {
+
+		choiceCamion.setChoiceByValue(
+			String(cotizacion.id_camion)
+		);
+
+		choiceCamion.disable();
+
+		if (cotizacion.estado === 7) {
+			document.getElementById('btnCambiarCamion').style.display = 'inline-block';
+		}
+	}
 }
 
 // ---------------- Eventos ----------------
@@ -296,6 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	// botón para agregar camión
 	document.getElementById('btnAgregarCamion').addEventListener('click', agregarCamionSeleccionado);
+	document.getElementById('btnCambiarCamion').addEventListener('click', cambiarCamion);
 	document.getElementById('btnAgregarPorcentajeServicio')?.addEventListener('click', agregarServicioPorcentaje);
 	document.getElementById('btnClienteManual').addEventListener('click', clienteManual);
 	document.getElementById('btnGuardar').addEventListener('click', () => guardarParcial(cotizacion));
@@ -385,7 +399,8 @@ function obtenerServiciosDisponibles(id_camion, id_linea) {
 }
 
 async function seleccionarCamion(e) {
-	if (modo === 'editar') {
+	if (modo === 'editar' && cotizacion.camiones.length > 0)
+	{
 		e.target.value = cotizacion.id_camion;
 		return;
 	}
@@ -398,6 +413,12 @@ async function seleccionarCamion(e) {
 
 	cotizacion.id_camion = id;
 	cotizacion.camion = getSelectedText(e.target);
+	choiceCamion.disable();
+
+	document.getElementById('btnCambiarCamion').style.display =
+		cotizacion.estado === 7
+			? 'inline-block'
+			: 'none';
 	await cargarPreciosCamion(id);
 
 	// legacy: si no hay camiones añadidos automáticamente, agregar la línea camión principal
@@ -466,8 +487,14 @@ function contarLineasTotales(){
 
 function agregarCamionSeleccionado(){
 	const sel = document.getElementById('selectCamion');
-	const id_camion = parseInt(sel.value);
-	if (!id_camion) { alert('Seleccione un camión'); return; }
+	const id_camion = Number(sel.value);
+	if (Number.isNaN(id_camion)) {
+		alert('Seleccione un camión');
+		return;
+	}
+
+	console.log('select value:', sel.value);
+	console.log('cotizacion.id_camion:', cotizacion.id_camion);
 
 	// Validar restricciones del tipo 5
 	if (!puedoAgregarCamion(id_camion)) {
@@ -767,7 +794,7 @@ function seleccionarCliente(event) {
 			es_nuevo: false
 		};
 		document.getElementById('inputClienteNombre').value = c.nombre_legal;
-		document.getElementById('selectDireccion').value = c.direccion;
+		choiceDireccion.setChoiceByValue(c.direccion);
 		document.getElementById('inputDNI').value = c.dni;
 		document.getElementById('inputRTN').value = c.rtn;
 	}
@@ -1358,7 +1385,7 @@ async function generarPDF(cot) {
 		margin: { left: margenIzq, right: margenDer },
 		theme: 'grid',
 		tableWidth: 'auto',
-		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220] },
+		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220], minCellHeight: 1 },
 		body: [
 			[`Cliente: ${cot.cliente.nombre} | RTN: ${cot.cliente.rtn}`],
 			[`Dirección: ${cot.cliente.direccion}`],
@@ -1394,7 +1421,7 @@ async function generarPDF(cot) {
 			if (!l.es_camion) lineasTotales.push(l);
 		});
 	});
-	const lineasPorPagina = 12;
+	const lineasPorPagina = 13;
 	/*const camionesLine = cot.lineas.find(l => l.es_camion);*/
 
 	for(let i=0; i<lineasTotales.length; i+=lineasPorPagina-1){
@@ -1448,7 +1475,7 @@ async function generarPDF(cot) {
 			body: body,
 			theme: 'grid',
 			styles: { fontSize: 10 },
-			headStyles: { fillColor: [220,220,220], halign:'center' }
+			headStyles: { fillColor: [220,220,220], halign:'center', minCellHeight: 1 }
 		});
 		yActual = doc.lastAutoTable.finalY + 5;
 		
@@ -1653,6 +1680,17 @@ function initDropdownDirecciones(valorSeleccionado = null) {
 		select.appendChild(opt);
 	});
 
+	// Si la dirección guardada no existe en catálogo, agregarla
+	if (
+		valorSeleccionado &&
+		!direcciones.some(d => d.direccion === valorSeleccionado)
+	) {
+		const opt = document.createElement('option');
+		opt.value = valorSeleccionado;
+		opt.text = valorSeleccionado;
+		select.appendChild(opt);
+	}
+
 	choiceDireccion = new Choices(select, {
 		searchEnabled: true,
 		removeItemButton: true,
@@ -1716,6 +1754,51 @@ function cambiarServicioEnCamion(event, camIdx, id_linea) {
 	renderCamionesUI();
 }
 
+async function cambiarCamion() {
+
+	if (cotizacion.estado !== 7) return;
+
+	const confirmar = confirm(
+		'Cambiar el camión eliminará todos los camiones y servicios agregados. ¿Desea continuar?'
+	);
+
+	if (!confirmar) return;
+
+	cotizacion.camiones = [];
+	cotizacion.lineas = [];
+	cotizacion.id_camion = null;
+	cotizacion.camion = '';
+
+	document.getElementById('selectCamion').disabled = false;
+
+	const selectCamion = document.getElementById('selectCamion');
+
+	if (choiceCamion) {
+		choiceCamion.destroy();
+	}
+
+	selectCamion.innerHTML = '';
+
+	camiones.forEach(c => {
+		const option = document.createElement('option');
+		option.value = c.id_camion;
+		option.textContent = c.camion;
+		selectCamion.appendChild(option);
+	});
+
+	choiceCamion = new Choices(selectCamion, {
+		searchEnabled: true
+	});
+	
+	choiceCamion.enable();
+
+	recalcularTotales();
+	renderCamionesUI();
+
+	document.getElementById('btnCambiarCamion').style.display = 'none';
+
+}
+
 // Exponer algunas funciones al scope global para uso en atributos onclick (modulo)
 window.agregarCamionSeleccionado = agregarCamionSeleccionado;
 window.agregarLineaServicioEnCamion = agregarLineaServicioEnCamion;
@@ -1728,3 +1811,4 @@ window.cotizacion = cotizacion;
 window.redondeoBancario = redondeoBancario;
 window.recalcularTotales = recalcularTotales;
 window.contarLineasTotales = contarLineasTotales;
+window.cambiarCamion = cambiarCamion;

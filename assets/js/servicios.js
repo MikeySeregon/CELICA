@@ -17,8 +17,8 @@ async function listarServicios() {
 		tablaServiciosDT.destroy();
 	}
 
-	tablaBody.innerHTML = '';
-	tablaBody.innerHTML = '';
+	/*tablaBody.innerHTML = '';*/
+	let html = '';
 	data.forEach(servicio => {
 		let estadoTexto = 'Indeterminado';
 		if (servicio.estado === 1) estadoTexto = 'Activo';
@@ -38,7 +38,7 @@ async function listarServicios() {
 			acciones += ` <button class="btn btn-sm btn-danger btn-desactivar" data-id="${servicio.id_servicio}">Desactivar</button>`;
 		}
 
-		tablaBody.innerHTML += `
+		html += `
 			<tr>
 				<td>${servicio.id_servicio}</td>
 				<td>${servicio.servicio}</td>
@@ -48,6 +48,7 @@ async function listarServicios() {
 			</tr>
 		`;
 	});
+	tablaBody.innerHTML = html;
 
 	tablaServiciosDT = $('#tablaServicios').DataTable({
 		responsive: {
@@ -75,9 +76,21 @@ async function listarServicios() {
 	});
 
 	// Agregar eventos a los botones después de renderizar
-	document.querySelectorAll('.btn-edit').forEach(btn => btn.addEventListener('click', editarServicio));
-	document.querySelectorAll('.btn-activar').forEach(btn => btn.addEventListener('click', activarServicio));
-	document.querySelectorAll('.btn-desactivar').forEach(btn => btn.addEventListener('click', desactivarServicio));
+	tablaBody.addEventListener('click', (e) => {
+		const btn = e.target;
+
+		if (btn.classList.contains('btn-edit')) {
+			editarServicio(e);
+		}
+
+		if (btn.classList.contains('btn-activar')) {
+			activarServicio(e);
+		}
+
+		if (btn.classList.contains('btn-desactivar')) {
+			desactivarServicio(e);
+		}
+	});
 }
 
 // Función para guardar o actualizar servicio

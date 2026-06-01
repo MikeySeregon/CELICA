@@ -15,13 +15,145 @@
 	<div class="container mt-4">
 		<h3>Bienvenido a CELICA</h3>
 		<p>Cálculo Eficiente de Logística Integral y Costos Automáticos</p>
+
+		<!-- KPIs -->
+		<div class="row g-3 mt-2">
+
+			<div class="col-md-3">
+			<div class="card text-bg-primary">
+				<div class="card-body">
+				<h6>Emitidas</h6>
+				<h3 id="kpiEmitidas">0</h3>
+				</div>
+			</div>
+			</div>
+
+			<div class="col-md-3">
+			<div class="card text-bg-success">
+				<div class="card-body">
+				<h6>Aprobadas</h6>
+				<h3 id="kpiAprobadas">0</h3>
+				</div>
+			</div>
+			</div>
+
+			<div class="col-md-3">
+			<div class="card text-bg-warning">
+				<div class="card-body">
+				<h6>Parciales</h6>
+				<h3 id="kpiParciales">0</h3>
+				</div>
+			</div>
+			</div>
+
+			<div class="col-md-3">
+			<div class="card text-bg-danger">
+				<div class="card-body">
+				<h6>Anuladas</h6>
+				<h3 id="kpiAnuladas">0</h3>
+				</div>
+			</div>
+			</div>
+
+		</div>
+
+		<!-- TABLAS -->
+		<div class="row mt-4 g-4">
+
+			<div class="col-md-6">
+			<h5>Últimas emitidas</h5>
+			<table class="table table-sm table-hover">
+				<thead>
+				<tr>
+					<th>ID</th>
+					<th>Cliente</th>
+					<th>Total</th>
+					<th>Acciones</th>
+				</tr>
+				</thead>
+				<tbody id="tablaEmitidas"></tbody>
+			</table>
+			</div>
+
+			<div class="col-md-6">
+			<h5>Últimas parciales</h5>
+			<table class="table table-sm table-hover">
+				<thead>
+				<tr>
+					<th>ID</th>
+					<th>Cliente</th>
+					<th>Total</th>
+					<th>Acciones</th>
+				</tr>
+				</thead>
+				<tbody id="tablaParciales"></tbody>
+			</table>
+			</div>
+
+		</div>
+
+		<!-- GRAFICO -->
+		<div class="row mt-4">
+			<div class="col-12">
+			<canvas id="chartCotizaciones" height="90"></canvas>
+			</div>
+		</div>
+
+		<div class="modal fade" id="modalDetalleCotizacion" tabindex="-1" aria-hidden="true">
+		<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title">Detalle de Cotización</h5>
+					<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+				</div>
+
+				<div class="modal-body">
+					<div class="mb-3">
+						<strong>Cliente:</strong>
+						<span id="detalleCliente"></span>
+					</div>
+					<div class="mb-3">
+						<strong>Fecha:</strong>
+						<span id="detalleFecha"></span>
+					</div>
+
+					<table class="table table-sm table-bordered">
+						<thead class="table-light">
+							<tr>
+								<th>Cant.</th>
+								<th>Descripción</th>
+								<th>Precio</th>
+								<th>Total</th>
+							</tr>
+						</thead>
+						<tbody id="detalleLineas">
+							<!-- JS -->
+						</tbody>
+					</table>
+
+					<div class="text-end mt-3">
+						<div>Subtotal: <strong><span id="detalleSubtotal">0.00</span></strong></div>
+						<div>ISV 15%: <strong><span id="detalleIsv">0.00</span></strong></div>
+						<div>Total: <strong><span id="detalleTotal">0.00</span></strong></div>
+					</div>
+				</div>
+
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+						Cerrar
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
 	</div>
 
 	<script type="module" src="../assets/js/supabase.js"></script>
 	<script type="module" src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 	<script type="module" src="../assets/js/guard.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<script type="module">
-		import { supabase } from '../assets/js/supabase.js'
 		const btnLogout = document.getElementById('btn-logout');
 		btnLogout.addEventListener('click', async () =>
 		{
@@ -32,5 +164,6 @@
 					window.location.href = 'login.html';
 		});
 	</script>
+	<script type="module" src="../assets/js/dashboard.js"></script>
 </body>
 </html>

@@ -517,7 +517,7 @@ async function generarPDF(cot) {
 		margin: { left: margenIzq, right: margenDer },
 		theme: 'grid',
 		tableWidth: 'auto',
-		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220] },
+		styles: { fontSize: 10, halign: 'left', fillColor: [220,220,220], minCellHeight: 1 },
 		body: [
 			[`Cliente: ${cot.cliente.nombre} | RTN: ${cot.cliente.rtn}`],
 			[`Dirección: ${cot.cliente.direccion}`],
@@ -554,7 +554,7 @@ async function generarPDF(cot) {
 			if (!l.es_camion) lineasTotales.push(l);
 		});
 	});
-	const lineasPorPagina = 12;
+	const lineasPorPagina = 13;
 
 	for(let i=0; i<lineasTotales.length; i+=lineasPorPagina-1){
 		const pageLineas = lineasTotales.slice(i, i + lineasPorPagina - 1);
@@ -606,7 +606,7 @@ async function generarPDF(cot) {
 			head: [['Cant.','Descripción','Valor C/U','Valor Total']],
 			body: body,
 			theme: 'grid',
-			styles: { fontSize: 10 },
+			styles: { fontSize: 10, minCellHeight: 1 },
 			headStyles: { fillColor: [220,220,220], halign:'center' }
 		});
 		yActual = doc.lastAutoTable.finalY + 5;
@@ -651,10 +651,10 @@ async function generarPDF(cot) {
 			);
 		}
 
-		if(i + (lineasPorPagina-1) < lineasTotales.length){
+		/*if(i + (lineasPorPagina-1) < lineasTotales.length){
 			doc.addPage();
 			yActual = 20; // margen superior para nuevas páginas
-		}
+		}*/
 	}
 
 	doc.save(`Cotizacion_${cot.id_cotizacion}.pdf`);
