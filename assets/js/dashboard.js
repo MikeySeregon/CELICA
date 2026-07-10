@@ -299,3 +299,27 @@ window.anularCotizacion = async function (idCotizacion) {
         alert('Error aprobando la cotización');
     }
 };
+
+/* =========================
+   Cargar listado principal
+========================= */
+async function cargarCotizaciones() {
+  const { data, error } = await supabase
+    .from('cotizaciones')
+    .select(`
+      id_cotizacion,
+      fecha_cotizacion,
+      cliente,
+      total,
+      id_estado
+    `)
+    .order('fecha_cotizacion', { ascending: false });
+
+  if (error) {
+    console.error(error);
+    alert('Error cargando cotizaciones');
+    return;
+  }
+
+  renderTabla(data);
+}
