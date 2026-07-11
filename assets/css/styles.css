@@ -72,3 +72,236 @@ table th, table td {
 .lineas-table td {
 	vertical-align: middle;
 }
+
+/* ============================================
+   SISTEMA DE DISEÑO CELICA
+   ============================================ */
+
+:root {
+	--celica-bg: #F4F7FB;
+	--celica-surface: #FFFFFF;
+	--celica-primary: #2C5F8A;
+	--celica-primary-light: #E8F1FA;
+	--celica-success: #1B8A5A;
+	--celica-success-light: #E7F7EF;
+	--celica-warning: #C77D12;
+	--celica-warning-light: #FDF3E1;
+	--celica-danger: #C7402D;
+	--celica-danger-light: #FBEAE7;
+	--celica-text: #1F2A37;
+	--celica-text-muted: #64748B;
+	--celica-border: #E5EAF0;
+	--celica-radius: 14px;
+	--celica-shadow: 0 2px 10px rgba(31, 42, 55, 0.06);
+	--celica-shadow-hover: 0 10px 24px rgba(31, 42, 55, 0.10);
+}
+
+body {
+	background-color: var(--celica-bg);
+	color: var(--celica-text);
+	font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* --- Encabezado de página --- */
+.page-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-bottom: 1.75rem;
+}
+
+.page-header h3 {
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	margin-bottom: 0.2rem;
+}
+
+.page-header p {
+	color: var(--celica-text-muted);
+	margin-bottom: 0;
+}
+
+/* --- Tarjetas KPI --- */
+.kpi-card {
+	display: flex;
+	align-items: center;
+	gap: 0.9rem;
+	background: var(--celica-surface);
+	border: 1px solid var(--celica-border);
+	border-radius: var(--celica-radius);
+	box-shadow: var(--celica-shadow);
+	padding: 1.1rem 1.25rem;
+	height: 100%;
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpi-card:hover {
+	transform: translateY(-2px);
+	box-shadow: var(--celica-shadow-hover);
+}
+
+.kpi-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 46px;
+	height: 46px;
+	min-width: 46px;
+	border-radius: 12px;
+	font-size: 1.25rem;
+}
+
+.kpi-content {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.kpi-label {
+	font-size: 0.8rem;
+	color: var(--celica-text-muted);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.kpi-value {
+	font-size: 1.6rem;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+.kpi-primary .kpi-icon { background: var(--celica-primary-light); color: var(--celica-primary); }
+.kpi-success .kpi-icon { background: var(--celica-success-light); color: var(--celica-success); }
+.kpi-warning .kpi-icon { background: var(--celica-warning-light); color: var(--celica-warning); }
+.kpi-danger  .kpi-icon { background: var(--celica-danger-light);  color: var(--celica-danger); }
+
+/* --- Tarjetas de sección (tablas, gráfico) --- */
+.section-card {
+	background: var(--celica-surface);
+	border: 1px solid var(--celica-border);
+	border-radius: var(--celica-radius);
+	box-shadow: var(--celica-shadow);
+	padding: 1.25rem;
+	height: 100%;
+}
+
+.section-card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.9rem;
+}
+
+.section-card-header h5 {
+	font-weight: 700;
+	font-size: 1.02rem;
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.section-card-header h5 i {
+	color: var(--celica-primary);
+}
+
+.section-card-link {
+	font-size: 0.85rem;
+	color: var(--celica-primary);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.section-card-link:hover {
+	text-decoration: underline;
+}
+
+/* --- Botones de acción responsivos en tablas --- */
+.acciones-desktop {
+	display: none;
+	gap: 0.35rem;
+	flex-wrap: wrap;
+}
+
+.acciones-mobile {
+	display: inline-block;
+}
+
+@media (min-width: 768px) {
+	.acciones-desktop { display: flex; }
+	.acciones-mobile { display: none; }
+}
+
+/* --- Estado vacío --- */
+.empty-state {
+	text-align: center;
+	color: var(--celica-text-muted);
+	padding: 1.5rem 0.5rem;
+}
+
+.empty-state i {
+	font-size: 1.5rem;
+	display: block;
+	margin-bottom: 0.4rem;
+	opacity: 0.6;
+}
+
+/* --- Comparativo en tarjetas KPI --- */
+.kpi-delta {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 0.76rem;
+	font-weight: 600;
+	margin-top: 3px;
+}
+
+.kpi-delta-up { color: var(--celica-success); }
+.kpi-delta-down { color: var(--celica-danger); }
+.kpi-delta-neutral { color: var(--celica-text-muted); }
+
+/* --- Feed de actividad reciente --- */
+.activity-feed {
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+	max-height: 340px;
+	overflow-y: auto;
+}
+
+.activity-item {
+	display: flex;
+	gap: 0.6rem;
+	align-items: flex-start;
+}
+
+.activity-icon {
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	border-radius: 9px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.85rem;
+}
+
+.activity-primary   { background: var(--celica-primary-light); color: var(--celica-primary); }
+.activity-success   { background: var(--celica-success-light); color: var(--celica-success); }
+.activity-warning   { background: var(--celica-warning-light); color: var(--celica-warning); }
+.activity-danger    { background: var(--celica-danger-light);  color: var(--celica-danger); }
+.activity-secondary { background: #EEF1F5; color: var(--celica-text-muted); }
+
+.activity-content {
+	font-size: 0.85rem;
+	line-height: 1.35;
+}
+
+.activity-time {
+	color: var(--celica-text-muted);
+	font-size: 0.75rem;
+}
