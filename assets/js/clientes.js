@@ -4,7 +4,11 @@ import { supabase } from './supabase.js';
 const form = document.getElementById('formCliente');
 const tablaBody = document.querySelector('#tablaClientes tbody');
 const btnCancelar = document.getElementById('btnCancelar');
+const formTitulo = document.getElementById('formTitulo');
 let tablaClientesDT = null;
+
+let cacheClientes = [];
+let filtroEstado = '';
 
 // --- Funciones --- //
 
@@ -14,16 +18,33 @@ async function listarClientes() {
 		.from('clientes')
 		.select('*');
 
-	if (error) return console.error(error);
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los clientes.' });
+		return;
+	}
 
-	// Destruir DataTable si existe
+	cacheClientes = data || [];
+	aplicarFiltro();
+}
+
+function aplicarFiltro() {
+	const filtrados = filtroEstado
+		? cacheClientes.filter(c => String(c.estado) === String(filtroEstado))
+		: cacheClientes;
+	renderTabla(filtrados);
+}
+
+function renderTabla(data) {
+	// Destruir la instancia anterior ANTES de tocar el DOM
 	if (tablaClientesDT) {
 		tablaClientesDT.destroy();
+		tablaClientesDT = null;
 	}
 
 	tablaBody.innerHTML = '';
 
-		data.forEach(c => {
+	data.forEach(c => {
 		tablaBody.innerHTML += `
 			<tr>
 				<td>${c.dni}</td>
@@ -33,16 +54,16 @@ async function listarClientes() {
 				<td>${c.telefono || ''}</td>
 				<td>${c.email || ''}</td>
 				<td>${c.direccion || ''}</td>
-				<td>${c.estado === 1 ? 'Activo' : 'Inactivo'}</td>
+				<td>${c.estado === 1 ? '<span class="badge text-bg-success">Activo</span>' : '<span class="badge text-bg-secondary">Inactivo</span>'}</td>
 				<td>
 					<button class="btn btn-sm btn-warning btnEditar" data-id="${c.dni}">
-						Editar
+						<i class="bi bi-pencil"></i> Editar
 					</button>
 					<button 
 						class="btn btn-sm btn-${c.estado === 1 ? 'danger' : 'success'} btnToggleEstado"
 						data-id="${c.dni}"
 						data-estado="${c.estado}">
-						${c.estado === 1 ? 'Desactivar' : 'Activar'}
+						<i class="bi ${c.estado === 1 ? 'bi-x-circle' : 'bi-check-circle'}"></i> ${c.estado === 1 ? 'Desactivar' : 'Activar'}
 					</button>
 				</td>
 			</tr>
@@ -83,20 +104,31 @@ async function listarClientes() {
 	});
 }
 
+// Wiring del filtro
+document.querySelectorAll('.filtro-estado').forEach(btn => {
+	btn.addEventListener('click', () => {
+		filtroEstado = btn.dataset.estado;
+		document.querySelectorAll('.filtro-estado').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		aplicarFiltro();
+	});
+});
+
 // 2. Guardar o actualizar cliente
 form.addEventListener('submit', async (e) => {
 	e.preventDefault();
 
-	const dni = document.getElementById('dni').value;
-	const nombre_legal = document.getElementById('nombre_legal').value;
-	const nombre_comercial = document.getElementById('nombre_comercial').value;
-	const rtn = document.getElementById('rtn').value;
-	const direccion = document.getElementById('direccion').value;
-	const telefono = document.getElementById('telefono').value;
-	const email = document.getElementById('email').value;
+	const dni = document.getElementById('dni').value.trim();
+	const nombre_legal = document.getElementById('nombre_legal').value.trim();
+	const nombre_comercial = document.getElementById('nombre_comercial').value.trim();
+	const rtn = document.getElementById('rtn').value.trim();
+	const direccion = document.getElementById('direccion').value.trim();
+	const telefono = document.getElementById('telefono').value.trim();
+	const email = document.getElementById('email').value.trim();
 
 	if (!dni || !nombre_legal) {
-		return alert('DNI y Nombre legal son obligatorios.');
+		Swal.fire({ icon: 'warning', title: 'Campos incompletos', text: 'DNI y Nombre legal son obligatorios.' });
+		return;
 	}
 
 	const payload = {
@@ -108,31 +140,39 @@ form.addEventListener('submit', async (e) => {
 		email
 	};
 
-	if (form.dataset.editando === "true") {
+	const editando = form.dataset.editando === "true";
+	let error;
+
+	if (editando) {
 		// ACTUALIZAR
-		const { error } = await supabase
+		({ error } = await supabase
 			.from('clientes')
 			.update(payload)
-			.eq('dni', dni);
-
-		if (error) return console.error(error);
-
+			.eq('dni', dni));
 	} else {
 		// INSERTAR
-		const { error } = await supabase
+		({ error } = await supabase
 			.from('clientes')
 			.insert([{
 				dni,
 				...payload,
 				estado: 1
-			}]);
-
-		if (error) return console.error(error);
+			}]));
 	}
 
-	form.reset();
-	form.dataset.editando = "false";
-	document.getElementById('dni').readOnly = false;
+	if (error) {
+		console.error(error);
+		if (error.code === '23505') {
+			Swal.fire({ icon: 'warning', title: 'DNI ya registrado', text: 'Ya existe un cliente con ese DNI.' });
+		} else {
+			Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo guardar: ' + error.message });
+		}
+		return;
+	}
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: editando ? 'Cliente actualizado' : 'Cliente agregado', showConfirmButton: false, timer: 2200 });
+
+	resetFormulario();
 	listarClientes();
 });
 
@@ -144,7 +184,11 @@ async function cargarCliente(dni) {
 		.eq('dni', dni)
 		.single();
 
-	if (error) return console.error(error);
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar el cliente.' });
+		return;
+	}
 
 	form.dataset.editando = "true";
 
@@ -156,28 +200,51 @@ async function cargarCliente(dni) {
 	document.getElementById('direccion').value = data.direccion || '';
 	document.getElementById('telefono').value = data.telefono || '';
 	document.getElementById('email').value = data.email || '';
+	formTitulo.textContent = 'Editar cliente';
+	form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // 4. Activar / Desactivar cliente
 async function toggleEstado(dni, estadoActual) {
-	const nuevoEstado = estadoActual == 1 ? 2 : 1;
+	const activando = estadoActual != 1;
 
+	if (!activando) {
+		const confirmar = await Swal.fire({
+			title: '¿Desactivar cliente?',
+			text: 'No aparecerá disponible para seleccionarlo en cotizaciones nuevas.',
+			icon: 'warning',
+			showCancelButton: true,
+			confirmButtonText: 'Sí, desactivar',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#dc3545'
+		});
+		if (!confirmar.isConfirmed) return;
+	}
+
+	const nuevoEstado = activando ? 1 : 2;
 	const { error } = await supabase
 		.from('clientes')
 		.update({ estado: nuevoEstado })
 		.eq('dni', dni);
 
-	if (error) return console.error(error);
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cambiar el estado del cliente.' });
+		return;
+	}
 
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: activando ? 'Cliente activado' : 'Cliente desactivado', showConfirmButton: false, timer: 2200 });
 	listarClientes();
 }
 
 // Cancelar edición
-btnCancelar.addEventListener('click', () => {
+function resetFormulario() {
 	form.reset();
 	form.dataset.editando = "false";
 	document.getElementById('dni').readOnly = false;
-});
+	formTitulo.textContent = 'Agregar cliente';
+}
+btnCancelar.addEventListener('click', resetFormulario);
 
 // Inicialización
 listarClientes();
