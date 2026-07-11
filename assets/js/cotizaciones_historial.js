@@ -358,6 +358,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 						id: d.id,
 						id_servicio: d.id_servicio,
 						descripcion: d.descripcion_servicio || '',
+						codigo: d.codigo,
 						precio_unitario: Number(d.precio_unitario || 0),
 						cantidad: Number(d.cantidad || 0),
 						total_linea: Number(d.total_linea || 0),
@@ -431,6 +432,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 					id: d.id,
 					id_servicio: d.id_servicio,
 					descripcion: d.descripcion_servicio || '',
+					codigo: d.codigo,
 					precio_unitario: Number(d.precio_unitario || 0),
 					cantidad: Number(d.cantidad || 0),
 					total_linea: Number(d.total_linea || 0),
@@ -565,6 +567,7 @@ async function generarPDF(cot) {
 				body.push([
 					{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
 					{ content: l.descripcion || '', styles:{ fontStyle:'bold', halign:'center' } },
+					{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 				]);
@@ -572,15 +575,17 @@ async function generarPDF(cot) {
 				// Si es la línea especial (porcentaje o cantidad según especificación), centrar descripción y solo mostrar valor total
 				if (l.id_servicio === 100 || l.id_servicio === 101 || l.es_serv_porcentaje) {
 					body.push([
-						{ content: '', styles:{ halign:'right' } },
+						{ content: '', styles:{ halign:'center' } },
 						{ content: l.descripcion, styles:{ halign:'center', fontStyle:'bold' } },
+						{ content: '', styles:{ halign:'right' } },
 						{ content: '', styles:{ halign:'right' } },
 						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
 					]);
 				} else {
 					body.push([
-						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
+						{ content: l.codigo || '', styles:{ halign:'center' } },
 						{ content: l.descripcion, styles:{ halign:'left' } },
+						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
 						{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
 						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
 					]);
@@ -591,11 +596,11 @@ async function generarPDF(cot) {
 		// Totales solo en la última página
 		if(i + (lineasPorPagina-1) >= lineasTotales.length){
 			body.push(
-				['', '', { content: 'Subtotal', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: 'Subtotal', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.subtotal.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
-				['', '', { content: '15% ISV', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: '15% ISV', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.isv.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
-				['', '', { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.total.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }]
 			);
 		}
@@ -603,7 +608,7 @@ async function generarPDF(cot) {
 		doc.autoTable({
 			startY: yActual,
 			margin: { left: margenIzq, right: margenDer },
-			head: [['Cant.','Descripción','Valor C/U','Valor Total']],
+			head: [['Código','Descripción','Cant.','Valor C/U','Valor Total']],
 			body: body,
 			theme: 'grid',
 			styles: { fontSize: 10, minCellHeight: 1 },

@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 // Elementos del DOM
 const selectCamionEl = document.getElementById('selectCamion');
 const selectServicioEl = document.getElementById('selectServicio');
+const inputCodigo = document.getElementById('inputCodigo');
 const inputPrecio = document.getElementById('inputPrecio');
 const fechaInicio = document.getElementById('fechaInicio');
 const fechaFin = document.getElementById('fechaFin');
@@ -62,6 +63,7 @@ async function listarPrecios(camionId) {
 	
 	tablaPreciosBody.innerHTML = data.map(p => `
 		<tr>
+			<td>${p.codigo ?? ''}</td>
 			<td>${p.servicios.servicio}</td>
 			<td>${new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(p.precio)}</td>
 			<td>${p.fecha_inicio}</td>
@@ -81,12 +83,13 @@ async function listarPrecios(camionId) {
 btnGuardarPrecio.addEventListener('click', async () => {
 	const id_camion = selectCamion.getValue(true);
 	const id_servicio = selectServicio.getValue(true);
+	const codigo = inputCodigo.value.trim();
 	const precio = parseFloat(inputPrecio.value);
 	const inicio = fechaInicio.value;
 	const fin = fechaFin.value;
 
-	if (!id_camion || !id_servicio || !precio || !inicio || !fin) {
-		alert('Complete todos los campos');
+	if (!id_camion || !id_servicio || !codigo || !precio || !inicio || !fin) {
+		alert('Complete todos los campos, incluyendo el código');
 		return;
 	}
 
@@ -112,12 +115,17 @@ btnGuardarPrecio.addEventListener('click', async () => {
 	// Insertar precio
 	const { error } = await supabase
 		.from('precios_servicio')
-		.insert([{ id_camion, id_servicio, precio, estado: 1, fecha_inicio: inicio, fecha_fin: fin }]);
+		.insert([{ id_camion, id_servicio, codigo, precio, estado: 1, fecha_inicio: inicio, fecha_fin: fin }]);
 
 	if (error) {
-		alert('Error al guardar: ' + error.message);
+		if (error.code === '23505') {
+			alert('Ese código ya está en uso por otro servicio activo. Use un código distinto.');
+		} else {
+			alert('Error al guardar: ' + error.message);
+		}
 	} else {
 		listarPrecios(id_camion);
+		inputCodigo.value = '';
 		inputPrecio.value = '';
 		fechaInicio.value = '';
 		fechaFin.value = '';
@@ -144,7 +152,8 @@ window.modificarPrecio = async (id) => {
 	// Copiar valores al formulario
 	selectCamion.setChoiceByValue(data.id_camion);
 	selectServicio.setChoiceByValue(data.id_servicio);
-	inputPrecio.value = new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(data.precio);
+	inputCodigo.value = data.codigo ?? '';
+	inputPrecio.value = data.precio;
 	fechaInicio.value = data.fecha_inicio;
 	fechaFin.value = data.fecha_fin;
 

@@ -181,7 +181,7 @@ window.verDetalle = async function (idCotizacion) {
                 // Línea del camión
                 let tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td colspan="4" style="background-color:#f0f0f0; font-weight:bold; text-align:center">${cam.camion}</td>
+                    <td colspan="5" style="background-color:#f0f0f0; font-weight:bold; text-align:center">${cam.camion}</td>
                 `;
                 tbody.appendChild(tr);
 
@@ -195,6 +195,7 @@ window.verDetalle = async function (idCotizacion) {
                     if (l.id_servicio === null) return; // Saltar línea-camión
                     tr = document.createElement('tr');
                     tr.innerHTML = `
+                        <td class="text-center">${l.codigo ?? ''}</td>
                         <td class="text-end">${l.cantidad}</td>
                         <td>&nbsp;&nbsp;&nbsp;${l.descripcion_servicio}</td>
                         <td class="text-end">${Number(l.precio_unitario).toFixed(2)}</td>
@@ -217,6 +218,7 @@ window.verDetalle = async function (idCotizacion) {
                     let tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td></td>
+                        <td></td>
                         <td style="text-align:center; font-weight:bold">${l.descripcion_servicio}</td>
                         <td></td>
                         <td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
@@ -236,6 +238,7 @@ window.verDetalle = async function (idCotizacion) {
             det.forEach(l => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
+                    <td class="text-center">${l.codigo ?? ''}</td>
                     <td class="text-end">${l.cantidad}</td>
                     <td>${l.descripcion_servicio}</td>
                     <td class="text-end">${Number(l.precio_unitario).toFixed(2)}</td>

@@ -107,6 +107,7 @@ async function cargarCotizacionExistente(id){
 				id: d.id,
 				id_servicio: d.id_servicio,
 				descripcion: d.descripcion_servicio,
+				codigo: d.codigo,
 				precio_unitario: d.precio_unitario,
 				cantidad: d.cantidad,
 				total_linea: d.total_linea,
@@ -187,6 +188,7 @@ async function cargarCotizacionExistente(id){
 			id: d.id,
 			id_servicio: d.id_servicio,
 			descripcion: d.descripcion_servicio,
+			codigo: d.codigo,
 			precio_unitario: d.precio_unitario,
 			cantidad: d.cantidad,
 			total_linea: d.total_linea,
@@ -380,7 +382,7 @@ function obtenerServiciosDisponibles(id_camion, id_linea) {
 	return precios
 		.map(p => {
 			const s = servicios.find(x => x.id_servicio === p.id_servicio);
-			return s ? { ...s, precio: p.precio } : null;
+			return s ? { ...s, precio: p.precio, codigo: p.codigo } : null;
 		})
 		.filter(Boolean)
 		.filter(s => {
@@ -650,7 +652,7 @@ function renderCamionesUI(){
 				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
 					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
 						<thead class="table-light">
-							<tr><th>#</th><th>Servicio</th><th>Descripción</th><th>Cantidad / %</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
+							<tr><th>#</th><th>Código</th><th>Servicio</th><th>Descripción</th><th>Cantidad / %</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
 						</thead>
 						<tbody id="cam_${idx}_body">
 						</tbody>
@@ -676,7 +678,7 @@ function renderCamionesUI(){
 				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
 					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
 						<thead class="table-light">
-							<tr><th>#</th><th>Servicio</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
+							<tr><th>#</th><th>Código</th><th>Servicio</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
 						</thead>
 						<tbody id="cam_${idx}_body">
 						</tbody>
@@ -703,6 +705,7 @@ function renderCamionesUI(){
 				// Línea especial de porcentaje/cantidad: descripción fija + modo específico
 				tr.innerHTML = `
 					<td>${numFila}</td>
+					<td></td>
 					<td><em>Especial</em></td>
 					<td>Porcentaje de servicio</td>
 					<td>${l.modo === 'porcentaje' ? `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.precio_unitario = 0; recalcularTotales(); renderCamionesUI(); } })(event)">` : `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario(linea.cantidad||0); recalcularTotales(); renderCamionesUI(); } })(event)">`}</td>
@@ -714,6 +717,7 @@ function renderCamionesUI(){
 				// Línea especial: sin dropdown, solo descripción, cantidad y precio
 				tr.innerHTML = `
 					<td>${numFila}</td>
+					<td></td>
 					<td><em>Sin servicio</em></td>
 					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
@@ -725,6 +729,7 @@ function renderCamionesUI(){
 				// Línea normal con dropdown de servicio
 				tr.innerHTML = `
 					<td>${numFila}</td>
+					<td>${l.codigo ?? ''}</td>
 					<td>${generarDropdownServicio(cam.id_camion, l.id_linea, l.id_servicio)}</td>
 					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
@@ -1157,6 +1162,7 @@ async function guardarDetallePorCamiones(idCotizacion){
 				id_cotizacion: idCotizacion,
 				id_servicio: l.id_servicio ?? null, // Mantener 0 para líneas tipo 5, convertir undefined/null a null
 				descripcion_servicio: (l.es_serv_porcentaje ? 'Porcentaje de servicio' : l.descripcion),
+				codigo: l.codigo ?? null,
 				precio_unitario: l.precio_unitario,
 				cantidad: l.cantidad,
 				total_linea: l.total_linea,
@@ -1433,6 +1439,7 @@ async function generarPDF(cot) {
 				body.push([
 					{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
 					{ content: l.descripcion || '', styles:{ fontStyle:'bold', halign:'center' } },
+					{ content: '', styles:{ fontStyle:'bold', halign:'center' } },
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } },
 					{ content: '', styles:{ fontStyle:'bold', halign:'right' } }
 				]);
@@ -1440,15 +1447,17 @@ async function generarPDF(cot) {
 				// Si es la línea especial (porcentaje o cantidad según especificación), centrar descripción y solo mostrar valor total
 				if (l.id_servicio === 100 || l.id_servicio === 101 || l.es_serv_porcentaje) {
 					body.push([
-						{ content: '', styles:{ halign:'right' } },
+						{ content: '', styles:{ halign:'center' } },
 						{ content: l.descripcion, styles:{ halign:'center', fontStyle:'bold' } },
+						{ content: '', styles:{ halign:'right' } },
 						{ content: '', styles:{ halign:'right' } },
 						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
 					]);
 				} else {
 					body.push([
-						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
+						{ content: l.codigo || '', styles:{ halign:'center' } },
 						{ content: l.descripcion, styles:{ halign:'left' } },
+						{ content: (l.cantidad || 0).toLocaleString() , styles:{ halign:'right' } },
 						{ content: (l.precio_unitario||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } },
 						{ content: (l.total_linea||0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 }), styles:{ halign:'right' } }
 					]);
@@ -1459,11 +1468,11 @@ async function generarPDF(cot) {
 		// Totales solo en la última página
 		if(i + (lineasPorPagina-1) >= lineasTotales.length){
 			body.push(
-				['', '', { content: 'Subtotal', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: 'Subtotal', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.subtotal.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
-				['', '', { content: '15% ISV', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: '15% ISV', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.isv.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }],
-				['', '', { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
+				['', '', '', { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
 					{ content: cot.totales.total.toLocaleString(undefined,{minimumFractionDigits:2}), styles: { halign: 'right' } }]
 			);
 		}
@@ -1471,7 +1480,7 @@ async function generarPDF(cot) {
 		doc.autoTable({
 			startY: yActual,
 			margin: { left: margenIzq, right: margenDer },
-			head: [['Cant.','Descripción','Valor C/U','Valor Total']],
+			head: [['Código','Descripción','Cant.','Valor C/U','Valor Total']],
 			body: body,
 			theme: 'grid',
 			styles: { fontSize: 10 },
@@ -1747,6 +1756,7 @@ function cambiarServicioEnCamion(event, camIdx, id_linea) {
 	linea.id_servicio = id_servicio;
 	linea.nombre_servicio = servicio.servicio;
 	linea.descripcion = servicio.descripcion || servicio.servicio;
+	linea.codigo = precioObj.codigo || '';
 	linea.precio_unitario = precioObj.precio || 0;
 	linea.total_linea = redondeoBancario(linea.precio_unitario * (linea.cantidad || 1));
 
