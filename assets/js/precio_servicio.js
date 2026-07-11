@@ -9,6 +9,9 @@ const fechaInicio = document.getElementById('fechaInicio');
 const fechaFin = document.getElementById('fechaFin');
 const btnGuardarPrecio = document.getElementById('btnGuardarPrecio');
 const tablaPreciosBody = document.querySelector('#tablaPrecios tbody');
+const btnAbrirCargaMasiva = document.getElementById('btnAbrirCargaMasiva');
+const hintCargaMasiva = document.getElementById('hintCargaMasiva');
+const modalCamionNombre = document.getElementById('modalCamionNombre');
 const btnDescargarPlantilla = document.getElementById('btnDescargarPlantilla');
 const btnProcesarPlantilla = document.getElementById('btnProcesarPlantilla');
 const inputArchivoPlantilla = document.getElementById('inputArchivoPlantilla');
@@ -31,6 +34,8 @@ const selectServicio = new Choices(selectServicioEl, {
 let camiones = [];
 let servicios = [];
 let ultimoCodigoSugerido = '';
+let cachePrecios = [];
+let filtroEstadoPrecio = '';
 
 // Sugiere un código (servicio-categoria-camión) sin sobrescribir texto que el usuario haya escrito a mano
 async function sugerirCodigo() {
@@ -66,7 +71,11 @@ async function cargarCamiones() {
 		.select('*')
 		.eq('estado', 1);
 
-	if (error) return console.error(error);
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los camiones.' });
+		return;
+	}
 
 	camiones = data;
 	const choicesData = data.map(c => ({ value: c.id_camion, label: c.camion }));
@@ -79,39 +88,131 @@ async function cargarServicios() {
 		.select('*')
 		.eq('estado', 1);
 
-	if (error) return console.error(error);
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los servicios.' });
+		return;
+	}
 
 	servicios = data;
-	const choicesData = data.map(s => ({ value: s.id_servicio, label: s.servicio }));
+	const choicesData = data.map(s => ({ value: s.id_servicio, label: s.codigo ? `${s.codigo} — ${s.servicio}` : s.servicio }));
 	selectServicio.setChoices(choicesData, 'value', 'label', true);
 }
 
+// Habilitar/deshabilitar la carga masiva según haya (o no) un camión seleccionado
+function actualizarEstadoCargaMasiva() {
+	const id_camion = selectCamion.getValue(true);
+	const camionInfo = camiones.find(c => c.id_camion == id_camion);
+
+	if (id_camion) {
+		btnAbrirCargaMasiva.disabled = false;
+		hintCargaMasiva.textContent = '';
+		modalCamionNombre.textContent = camionInfo?.camion || '';
+	} else {
+		btnAbrirCargaMasiva.disabled = true;
+		hintCargaMasiva.textContent = 'Selecciona un camión para habilitar la carga masiva.';
+		modalCamionNombre.textContent = '—';
+	}
+}
 
 // Listar precios asignados a un camión
 async function listarPrecios(camionId) {
-	if (!camionId) return tablaPreciosBody.innerHTML = '';
-	const { data } = await supabase
+	if (!camionId) {
+		cachePrecios = [];
+		if (tablaPreciosDT) {
+			tablaPreciosDT.destroy();
+			tablaPreciosDT = null;
+		}
+		tablaPreciosBody.innerHTML = '';
+		return;
+	}
+
+	const { data, error } = await supabase
 		.from('precios_servicio')
 		.select('*, servicios(servicio)')
 		.eq('id_camion', camionId);
-	
+
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los precios del camión.' });
+		return;
+	}
+
+	cachePrecios = data || [];
+	aplicarFiltroPrecios();
+}
+
+function aplicarFiltroPrecios() {
+	const filtrados = filtroEstadoPrecio
+		? cachePrecios.filter(p => String(p.estado) === String(filtroEstadoPrecio))
+		: cachePrecios;
+	renderTablaPrecios(filtrados);
+}
+
+let tablaPreciosDT = null;
+
+function renderTablaPrecios(data) {
+	// Destruir la instancia anterior ANTES de tocar el DOM, para que la
+	// paginación no quede desincronizada (mismo cuidado que en Camiones/Servicios).
+	if (tablaPreciosDT) {
+		tablaPreciosDT.destroy();
+		tablaPreciosDT = null;
+	}
+
 	tablaPreciosBody.innerHTML = data.map(p => `
 		<tr>
 			<td>${p.codigo ?? ''}</td>
-			<td>${p.servicios.servicio}</td>
+			<td>${p.servicios?.servicio ?? ''}</td>
 			<td>${new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(p.precio)}</td>
 			<td>${p.fecha_inicio}</td>
 			<td>${p.fecha_fin}</td>
-			<td>${p.estado == 1 ? 'Activo' : 'Inactivo'}</td>
+			<td>${p.estado == 1 ? '<span class="badge text-bg-success">Activo</span>' : '<span class="badge text-bg-secondary">Inactivo</span>'}</td>
 			<td>
-				<button class="btn btn-sm btn-warning" onclick="toggleEstado(${p.id_precio}, ${p.estado})">
-					${p.estado == 1 ? 'Desactivar' : 'Activar'}
+				<button class="btn btn-sm btn-warning" onclick="toggleEstadoPrecio(${p.id_precio}, ${p.estado})">
+					<i class="bi ${p.estado == 1 ? 'bi-x-circle' : 'bi-check-circle'}"></i> ${p.estado == 1 ? 'Desactivar' : 'Activar'}
 				</button>
-				<button class="btn btn-sm btn-secondary" onclick="modificarPrecio(${p.id_precio})">Modificar</button>
+				<button class="btn btn-sm btn-secondary" onclick="modificarPrecio(${p.id_precio})">
+					<i class="bi bi-pencil"></i> Modificar
+				</button>
 			</td>
 		</tr>
 	`).join('');
+
+	tablaPreciosDT = $('#tablaPrecios').DataTable({
+		responsive: {
+			details: {
+				type: 'column'
+			}
+		},
+		order: [],
+		columnDefs: [
+			{ responsivePriority: 1, targets: 0 }, // Código
+			{ responsivePriority: 2, targets: 1 }, // Servicio
+			{ responsivePriority: 3, targets: 5 }, // Estado
+			{ responsivePriority: 1, targets: 6 }, // Acciones
+		],
+		language: {
+			search: "Buscar:",
+			lengthMenu: "Mostrar _MENU_ registros",
+			info: "Mostrando _START_ a _END_ de _TOTAL_ precios",
+			paginate: {
+				next: "Siguiente",
+				previous: "Anterior"
+			},
+			zeroRecords: "No hay precios que coincidan con el filtro"
+		}
+	});
 }
+
+// Wiring del filtro de estado de precios
+document.querySelectorAll('.filtro-estado-precio').forEach(btn => {
+	btn.addEventListener('click', () => {
+		filtroEstadoPrecio = btn.dataset.estado;
+		document.querySelectorAll('.filtro-estado-precio').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		aplicarFiltroPrecios();
+	});
+});
 
 // Guardar precio
 btnGuardarPrecio.addEventListener('click', async () => {
@@ -123,17 +224,17 @@ btnGuardarPrecio.addEventListener('click', async () => {
 	const fin = fechaFin.value;
 
 	if (!id_camion || !id_servicio || !codigo || !precio || !inicio || !fin) {
-		alert('Complete todos los campos, incluyendo el código');
+		Swal.fire({ icon: 'warning', title: 'Campos incompletos', text: 'Complete todos los campos, incluyendo el código.' });
 		return;
 	}
 
 	if (inicio > fin) {
-		alert('La fecha de inicio no puede ser mayor que la de fin');
+		Swal.fire({ icon: 'warning', title: 'Fechas inválidas', text: 'La fecha de inicio no puede ser mayor que la de fin.' });
 		return;
 	}
 
 	// Validar solapamiento de fechas
-	const { data: solapados } = await supabase
+	const { data: solapados, error: errSolape } = await supabase
 		.from('precios_servicio')
 		.select('*')
 		.eq('id_camion', id_camion)
@@ -141,8 +242,14 @@ btnGuardarPrecio.addEventListener('click', async () => {
 		.eq('estado', 1)
 		.or(`fecha_inicio.lte.${fin},fecha_fin.gte.${inicio}`);
 
+	if (errSolape) {
+		console.error(errSolape);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo validar el rango de fechas.' });
+		return;
+	}
+
 	if (solapados.length > 0) {
-		alert('Ya existe un precio activo en ese rango de fechas');
+		Swal.fire({ icon: 'warning', title: 'Rango de fechas ocupado', text: 'Ya existe un precio activo en ese rango de fechas para este servicio.' });
 		return;
 	}
 
@@ -152,12 +259,14 @@ btnGuardarPrecio.addEventListener('click', async () => {
 		.insert([{ id_camion, id_servicio, codigo, precio, estado: 1, fecha_inicio: inicio, fecha_fin: fin }]);
 
 	if (error) {
+		console.error(error);
 		if (error.code === '23505') {
-			alert('Ese código ya está en uso por otro servicio activo. Use un código distinto.');
+			Swal.fire({ icon: 'warning', title: 'Código en uso', text: 'Ese código ya está en uso por otro servicio activo. Use un código distinto.' });
 		} else {
-			alert('Error al guardar: ' + error.message);
+			Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo guardar: ' + error.message });
 		}
 	} else {
+		Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Precio guardado', showConfirmButton: false, timer: 2200 });
 		listarPrecios(id_camion);
 		inputCodigo.value = '';
 		ultimoCodigoSugerido = '';
@@ -205,7 +314,10 @@ function interpretarFechaExcel(valor) {
 // Descargar plantilla con todos los servicios activos para el camión seleccionado
 btnDescargarPlantilla.addEventListener('click', async () => {
 	const id_camion = selectCamion.getValue(true);
-	if (!id_camion) return alert('Seleccione un camión primero');
+	if (!id_camion) {
+		Swal.fire({ icon: 'warning', title: 'Falta el camión', text: 'Selecciona un camión primero.' });
+		return;
+	}
 
 	const camionInfo = camiones.find(c => c.id_camion == id_camion);
 
@@ -214,7 +326,10 @@ btnDescargarPlantilla.addEventListener('click', async () => {
 		.select('*')
 		.eq('estado', 1)
 		.order('id_servicio', { ascending: true });
-	if (errServ) return alert('Error al cargar servicios: ' + errServ.message);
+	if (errServ) {
+		Swal.fire({ icon: 'error', title: 'Error', text: 'Error al cargar servicios: ' + errServ.message });
+		return;
+	}
 
 	// Precargar código/precio/fechas si el camión ya tiene un precio vigente para ese servicio
 	const { data: preciosActuales, error: errPrecios } = await supabase
@@ -222,7 +337,10 @@ btnDescargarPlantilla.addEventListener('click', async () => {
 		.select('*')
 		.eq('id_camion', id_camion)
 		.eq('estado', 1);
-	if (errPrecios) return alert('Error al cargar precios actuales: ' + errPrecios.message);
+	if (errPrecios) {
+		Swal.fire({ icon: 'error', title: 'Error', text: 'Error al cargar precios actuales: ' + errPrecios.message });
+		return;
+	}
 
 	const mapaPrecios = {};
 	(preciosActuales || []).forEach(p => { mapaPrecios[p.id_servicio] = p; });
@@ -254,15 +372,23 @@ btnDescargarPlantilla.addEventListener('click', async () => {
 
 	const nombreCamion = (camionInfo?.camion || `camion_${id_camion}`).replace(/[^a-z0-9]+/gi, '_');
 	XLSX.writeFile(wb, `plantilla_precios_${nombreCamion}.xlsx`);
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Plantilla descargada', showConfirmButton: false, timer: 2200 });
 });
 
 // Subir y procesar la plantilla llenada
 btnProcesarPlantilla.addEventListener('click', async () => {
 	const id_camion = selectCamion.getValue(true);
-	if (!id_camion) return alert('Seleccione un camión primero');
+	if (!id_camion) {
+		Swal.fire({ icon: 'warning', title: 'Falta el camión', text: 'Selecciona un camión primero.' });
+		return;
+	}
 
 	const archivo = inputArchivoPlantilla.files[0];
-	if (!archivo) return alert('Seleccione un archivo de plantilla (.xlsx)');
+	if (!archivo) {
+		Swal.fire({ icon: 'warning', title: 'Falta el archivo', text: 'Selecciona un archivo de plantilla (.xlsx).' });
+		return;
+	}
 
 	resultadoPlantilla.innerHTML = '<em>Procesando...</em>';
 
@@ -370,24 +496,57 @@ btnProcesarPlantilla.addEventListener('click', async () => {
 
 	inputArchivoPlantilla.value = '';
 	listarPrecios(id_camion);
+
+	if (errores.length === 0) {
+		Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Plantilla procesada', showConfirmButton: false, timer: 2500 });
+	}
 });
 
 // Activar/Desactivar precio
-window.toggleEstado = async (id, estadoActual) => {
-	const nuevoEstado = estadoActual == 1 ? 2 : 1;
-	await supabase
+window.toggleEstadoPrecio = async (id, estadoActual) => {
+	const activando = estadoActual != 1;
+
+	if (!activando) {
+		const confirmar = await Swal.fire({
+			title: '¿Desactivar precio?',
+			text: 'Este precio dejará de estar disponible para nuevas cotizaciones.',
+			icon: 'warning',
+			showCancelButton: true,
+			confirmButtonText: 'Sí, desactivar',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#dc3545'
+		});
+		if (!confirmar.isConfirmed) return;
+	}
+
+	const nuevoEstado = activando ? 1 : 2;
+	const { error } = await supabase
 		.from('precios_servicio')
 		.update({ estado: nuevoEstado })
 		.eq('id_precio', id);
-	listarPrecios(selectCamion.value);
+
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cambiar el estado del precio.' });
+		return;
+	}
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: activando ? 'Precio activado' : 'Precio desactivado', showConfirmButton: false, timer: 2200 });
+	listarPrecios(selectCamion.getValue(true));
 }
 
 window.modificarPrecio = async (id) => {
-	const { data } = await supabase
+	const { data, error } = await supabase
 		.from('precios_servicio')
 		.select('*')
 		.eq('id_precio', id)
 		.single();
+
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar el precio a modificar.' });
+		return;
+	}
 
 	// Copiar valores al formulario
 	selectCamion.setChoiceByValue(data.id_camion);
@@ -396,19 +555,34 @@ window.modificarPrecio = async (id) => {
 	inputPrecio.value = data.precio;
 	fechaInicio.value = data.fecha_inicio;
 	fechaFin.value = data.fecha_fin;
+	actualizarEstadoCargaMasiva();
 
-	// Opcional: desactivar automáticamente el precio viejo
+	// Desactivar automáticamente el precio viejo, para poder reutilizar el mismo código al reprecificar
 	if (data.estado == 1) {
-		await supabase.from('precios_servicio').update({ estado: 2 }).eq('id_precio', id);
-		listarPrecios(selectCamion.value);
+		const { error: errDesactivar } = await supabase.from('precios_servicio').update({ estado: 2 }).eq('id_precio', id);
+		if (errDesactivar) {
+			console.error(errDesactivar);
+			Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo desactivar el precio anterior.' });
+			return;
+		}
+		listarPrecios(selectCamion.getValue(true));
 	}
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Datos cargados en el formulario, listos para editar', showConfirmButton: false, timer: 3000 });
+	document.getElementById('selectServicio').closest('.section-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 // Eventos
-selectCamionEl.addEventListener('change', () => listarPrecios(selectCamion.getValue(true)));
+selectCamionEl.addEventListener('change', () => {
+	listarPrecios(selectCamion.getValue(true));
+	actualizarEstadoCargaMasiva();
+});
 selectCamionEl.addEventListener('change', sugerirCodigo);
 selectServicioEl.addEventListener('change', sugerirCodigo);
 
 // Inicializar
-cargarCamiones().then(() => listarPrecios(selectCamion.getValue(true)));
+cargarCamiones().then(() => {
+	listarPrecios(selectCamion.getValue(true));
+	actualizarEstadoCargaMasiva();
+});
 cargarServicios();

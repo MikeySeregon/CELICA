@@ -5,19 +5,28 @@ const tablaBody = document.querySelector('#tablaServicios tbody');
 const btnCancelar = document.getElementById('btnCancelar');
 const inputCodigo = document.getElementById('codigoServicio');
 const selectCategoria = document.getElementById('idCategoria');
+const filtroCategoria = document.getElementById('filtroCategoria');
+const formTitulo = document.getElementById('formTitulo');
 let tablaServiciosDT = null;
+
+let cacheServicios = [];
+let filtroEstado = '';
+let filtroCategoriaActiva = '';
 
 async function listarCategorias() {
 	const { data, error } = await supabase
 		.from('categorias')
 		.select('*')
-		.eq('estado', 1);
+		.eq('estado', 1)
+		.order('nombre', { ascending: true });
 
 	if (error) return console.error(error);
 
 	selectCategoria.innerHTML = '<option value="">Sin categoría</option>';
+	filtroCategoria.innerHTML = '<option value="">Todas las categorías</option>';
 	data.forEach(cat => {
 		selectCategoria.innerHTML += `<option value="${cat.id_categoria}">${cat.codigo} - ${cat.nombre}</option>`;
+		filtroCategoria.innerHTML += `<option value="${cat.id_categoria}">${cat.codigo} - ${cat.nombre}</option>`;
 	});
 }
 
@@ -27,18 +36,38 @@ async function listarServicios() {
 		.select('*, categorias(id_categoria, codigo, nombre)')
 		.order('id_servicio', { ascending: true });
 
-	if (error) return console.error(error);
-
-	if (tablaServiciosDT) {
-		tablaServiciosDT.destroy();
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los servicios.' });
+		return;
 	}
 
-	/*tablaBody.innerHTML = '';*/
-	let html = '';
+	cacheServicios = data || [];
+	aplicarFiltros();
+}
+
+function aplicarFiltros() {
+	const filtrados = cacheServicios.filter(s => {
+		const pasaEstado = filtroEstado ? String(s.estado) === String(filtroEstado) : true;
+		const pasaCategoria = filtroCategoriaActiva ? String(s.id_categoria) === String(filtroCategoriaActiva) : true;
+		return pasaEstado && pasaCategoria;
+	});
+	renderTabla(filtrados);
+}
+
+function renderTabla(data) {
+	// Destruir la instancia anterior ANTES de tocar el DOM
+	if (tablaServiciosDT) {
+		tablaServiciosDT.destroy();
+		tablaServiciosDT = null;
+	}
+
+	tablaBody.innerHTML = '';
+
 	data.forEach(servicio => {
-		let estadoTexto = 'Indeterminado';
-		if (servicio.estado === 1) estadoTexto = 'Activo';
-		else if (servicio.estado === 2) estadoTexto = 'Inactivo';
+		const badgeEstado = servicio.estado === 1
+			? '<span class="badge text-bg-success">Activo</span>'
+			: '<span class="badge text-bg-secondary">Inactivo</span>';
 
 		let acciones = `
 			<button class="btn btn-sm btn-warning btn-edit" 
@@ -46,29 +75,29 @@ async function listarServicios() {
 					data-tipo="${servicio.servicio}" 
 					data-codigo="${servicio.codigo || ''}" 
 					data-id-categoria="${servicio.id_categoria || ''}" 
-					data-descripcion="${servicio.descripcion || ''}">Editar</button>
+					data-descripcion="${servicio.descripcion || ''}">
+				<i class="bi bi-pencil"></i> Editar
+			</button>
 		`;
 
 		if (servicio.estado !== 1) {
-			acciones += ` <button class="btn btn-sm btn-success btn-activar" data-id="${servicio.id_servicio}">Activar</button>`;
-		}
-		if (servicio.estado === 1) {
-			acciones += ` <button class="btn btn-sm btn-danger btn-desactivar" data-id="${servicio.id_servicio}">Desactivar</button>`;
+			acciones += ` <button class="btn btn-sm btn-success btn-activar" data-id="${servicio.id_servicio}"><i class="bi bi-check-circle"></i> Activar</button>`;
+		} else {
+			acciones += ` <button class="btn btn-sm btn-danger btn-desactivar" data-id="${servicio.id_servicio}"><i class="bi bi-x-circle"></i> Desactivar</button>`;
 		}
 
-		html += `
+		tablaBody.innerHTML += `
 			<tr>
 				<td>${servicio.id_servicio}</td>
 				<td>${servicio.servicio}</td>
 				<td>${servicio.codigo || ''}</td>
 				<td>${servicio.categorias?.nombre || ''}</td>
 				<td>${servicio.descripcion || ''}</td>
-				<td>${estadoTexto}</td>
+				<td>${badgeEstado}</td>
 				<td>${acciones}</td>
 			</tr>
 		`;
 	});
-	tablaBody.innerHTML = html;
 
 	tablaServiciosDT = $('#tablaServicios').DataTable({
 		responsive: {
@@ -77,11 +106,10 @@ async function listarServicios() {
 			}
 		},
 		columnDefs: [
-			{ responsivePriority: 1, targets: 0 }, // 
-			{ responsivePriority: 2, targets: 1 }, // 
-			/*{ responsivePriority: 3, targets: 2 }, //*/
-			/*{ responsivePriority: 4, targets: 3 }, //*/
-			{ responsivePriority: 5, targets: 6 }, // 
+			{ responsivePriority: 1, targets: 0 }, // ID
+			{ responsivePriority: 2, targets: 1 }, // Servicio
+			{ responsivePriority: 3, targets: 5 }, // Estado
+			{ responsivePriority: 1, targets: 6 }, // Acciones
 		],
 		language: {
 			search: "Buscar:",
@@ -95,96 +123,139 @@ async function listarServicios() {
 		}
 	});
 
-	// Agregar eventos a los botones después de renderizar
-	tablaBody.addEventListener('click', (e) => {
-		const btn = e.target;
-
-		if (btn.classList.contains('btn-edit')) {
-			editarServicio(e);
-		}
-
-		if (btn.classList.contains('btn-activar')) {
-			activarServicio(e);
-		}
-
-		if (btn.classList.contains('btn-desactivar')) {
-			desactivarServicio(e);
-		}
-	});
+	// Listeners directos por botón (no delegación): así "e.currentTarget" siempre
+	// es el <button>, aunque el clic caiga sobre el ícono de adentro.
+	document.querySelectorAll('.btn-edit').forEach(btn => btn.addEventListener('click', editarServicio));
+	document.querySelectorAll('.btn-activar').forEach(btn => btn.addEventListener('click', activarServicio));
+	document.querySelectorAll('.btn-desactivar').forEach(btn => btn.addEventListener('click', desactivarServicio));
 }
+
+// Wiring de los filtros
+document.querySelectorAll('.filtro-estado').forEach(btn => {
+	btn.addEventListener('click', () => {
+		filtroEstado = btn.dataset.estado;
+		document.querySelectorAll('.filtro-estado').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		aplicarFiltros();
+	});
+});
+
+filtroCategoria.addEventListener('change', () => {
+	filtroCategoriaActiva = filtroCategoria.value;
+	aplicarFiltros();
+});
 
 // Función para guardar o actualizar servicio
 form.addEventListener('submit', async (e) => {
 	e.preventDefault();
-	
+
 	const id = document.getElementById('idServicio').value;
-	const servicio = document.getElementById('servicio').value;
-	const descripcion = document.getElementById('descripcion').value;
+	const servicio = document.getElementById('servicio').value.trim();
+	const descripcion = document.getElementById('descripcion').value.trim();
 	const codigo = inputCodigo.value.trim().toUpperCase() || null;
 	const id_categoria = selectCategoria.value || null;
 
-	if (id) {
-		// Actualizar
-		const { error } = await supabase
-			.from('servicios')
-			.update({ servicio, descripcion, codigo, id_categoria })
-			.eq('id_servicio', id);
-		if (error) return manejarErrorGuardado(error);
-	} else {
-		// Insertar
-		const { error } = await supabase
-			.from('servicios')
-			.insert({ servicio, descripcion, codigo, id_categoria });
-		if (error) return manejarErrorGuardado(error);
+	if (!servicio) {
+		Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Debe ingresar el nombre del servicio.' });
+		return;
 	}
 
-	form.reset();
+	let error;
+	if (id) {
+		({ error } = await supabase
+			.from('servicios')
+			.update({ servicio, descripcion, codigo, id_categoria })
+			.eq('id_servicio', id));
+	} else {
+		({ error } = await supabase
+			.from('servicios')
+			.insert({ servicio, descripcion, codigo, id_categoria }));
+	}
+
+	if (error) return manejarErrorGuardado(error);
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: id ? 'Servicio actualizado' : 'Servicio agregado', showConfirmButton: false, timer: 2200 });
+
+	resetFormulario();
 	listarServicios();
 });
 
 function manejarErrorGuardado(error) {
+	console.error(error);
 	if (error.code === '23505') {
-		alert('Ese código ya está en uso por otro servicio activo. Use un código distinto.');
+		Swal.fire({ icon: 'warning', title: 'Código en uso', text: 'Ese código ya está en uso por otro servicio activo. Use un código distinto.' });
 	} else {
-		console.error(error);
-		alert('Error al guardar: ' + error.message);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo guardar: ' + error.message });
 	}
 }
 
 // Función para editar un servicio
-async function editarServicio(e) {
-	const btn = e.target;
+function editarServicio(e) {
+	const btn = e.currentTarget;
 
 	document.getElementById('idServicio').value = btn.dataset.id;
 	document.getElementById('servicio').value = btn.dataset.tipo;
 	document.getElementById('descripcion').value = btn.dataset.descripcion;
 	inputCodigo.value = btn.dataset.codigo || '';
 	selectCategoria.value = btn.dataset.idCategoria || '';
-};
+	formTitulo.textContent = 'Editar servicio';
+	form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // Función para activar/desactivar
 async function activarServicio(e) {
-	const id = e.target.dataset.id;
+	const id = e.currentTarget.dataset.id;
 	const { error } = await supabase
 		.from('servicios')
 		.update({ estado: 1 })
 		.eq('id_servicio', id);
-	if (error) return console.error(error);
+
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo activar el servicio.' });
+		return;
+	}
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Servicio activado', showConfirmButton: false, timer: 2200 });
 	listarServicios();
 }
 
 async function desactivarServicio(e) {
-	const id = e.target.dataset.id;
+	const id = e.currentTarget.dataset.id;
+
+	const confirmar = await Swal.fire({
+		title: '¿Desactivar servicio?',
+		text: 'Ya no aparecerá disponible para asignarle precios ni para agregarlo a cotizaciones nuevas.',
+		icon: 'warning',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, desactivar',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#dc3545'
+	});
+	if (!confirmar.isConfirmed) return;
+
 	const { error } = await supabase
 		.from('servicios')
 		.update({ estado: 2 })
 		.eq('id_servicio', id);
-	if (error) return console.error(error);
+
+	if (error) {
+		console.error(error);
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo desactivar el servicio.' });
+		return;
+	}
+
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Servicio desactivado', showConfirmButton: false, timer: 2200 });
 	listarServicios();
 }
 
 // Botón cancelar
-btnCancelar.addEventListener('click', () => form.reset());
+function resetFormulario() {
+	form.reset();
+	document.getElementById('idServicio').value = '';
+	formTitulo.textContent = 'Agregar servicio';
+}
+btnCancelar.addEventListener('click', resetFormulario);
 
 // Inicializar listado
 listarCategorias();
