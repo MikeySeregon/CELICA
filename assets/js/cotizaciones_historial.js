@@ -2,6 +2,10 @@ import { supabase } from './supabase.js';
 
 let tabla;
 let modalDetalle;
+let cacheCotizaciones = [];
+let filtroActivo = '';
+
+const fmtMoneda = new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' });
 
 /* =========================
 	 Inicialización
@@ -10,6 +14,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 	modalDetalle = new bootstrap.Modal(
 		document.getElementById('modalDetalleCotizacion')
 	);
+
+	// Compatibilidad con los enlaces de KPI del dashboard: ?estado=5
+	const params = new URLSearchParams(window.location.search);
+	const estadoUrl = params.get('estado');
+	if (estadoUrl) {
+		filtroActivo = estadoUrl;
+	}
+
+	document.querySelectorAll('.filtro-estado').forEach(btn => {
+		if (btn.dataset.estado === filtroActivo) {
+			document.querySelectorAll('.filtro-estado').forEach(b => b.classList.remove('active'));
+			btn.classList.add('active');
+		}
+		btn.addEventListener('click', () => {
+			filtroActivo = btn.dataset.estado;
+			document.querySelectorAll('.filtro-estado').forEach(b => b.classList.remove('active'));
+			btn.classList.add('active');
+			aplicarFiltro();
+		});
+	});
 
 	await cargarCotizaciones();
 });
@@ -31,83 +55,104 @@ async function cargarCotizaciones() {
 
 	if (error) {
 		console.error(error);
-		alert('Error cargando cotizaciones');
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar las cotizaciones.' });
 		return;
 	}
 
-	renderTabla(data);
+	cacheCotizaciones = data || [];
+	aplicarFiltro();
+}
+
+/* =========================
+	 Filtro por estado
+========================= */
+function aplicarFiltro() {
+	const filtradas = filtroActivo
+		? cacheCotizaciones.filter(c => String(c.id_estado) === String(filtroActivo))
+		: cacheCotizaciones;
+
+	renderTabla(filtradas);
 }
 
 /* =========================
 	 Render DataTable
 ========================= */
 function renderTabla(cotizaciones) {
+	// IMPORTANTE: destruir la instancia anterior ANTES de tocar el DOM.
+	// Si se reconstruye el tbody mientras la instancia vieja sigue activa,
+	// DataTables queda con un estado de paginación desincronizado y el
+	// filtro/recarga no se refleja visualmente.
+	if (tabla) {
+		tabla.destroy();
+		tabla = null;
+	}
+
 	const tbody = document.querySelector('#tablaCotizaciones tbody');
 	tbody.innerHTML = '';
 
 	cotizaciones.forEach(c => {
 		const tr = document.createElement('tr');
 
+		const itemsExtra = [];
+		if (c.id_estado === 7) {
+			itemsExtra.push({ icon: 'bi-pencil', label: 'Editar', clase: 'warning', accion: `editarCotizacion(${c.id_cotizacion})` });
+		}
+		if (c.id_estado === 5 || c.id_estado === 8) {
+			itemsExtra.push({ icon: 'bi-file-earmark-pdf', label: 'PDF', clase: 'secondary', accion: `generarPDFHistorial(${c.id_cotizacion})` });
+		}
+		if (c.id_estado === 5) {
+			itemsExtra.push({ icon: 'bi-check-lg', label: 'Aprobar', clase: 'success', accion: `aprobarCotizacion(${c.id_cotizacion}, this)` });
+			itemsExtra.push({ icon: 'bi-x-lg', label: 'Anular', clase: 'danger', accion: `anularCotizacion(${c.id_cotizacion}, this)` });
+		}
+
 		tr.innerHTML = `
 			<td>${generarCodigo(c.id_cotizacion)}</td>
 			<td>${c.cliente}</td>
 			<td>${c.fecha_cotizacion}</td>
 			<td>${badgeEstado(c.id_estado)}</td>
-			<td>${Number(c.total).toFixed(2)}</td>
+			<td>${fmtMoneda.format(Number(c.total || 0))}</td>
 			<td>
-				<button class="btn btn-sm btn-info me-1"
-					onclick="verDetalle(${c.id_cotizacion})">
-					Ver
-				</button>
-				${
-					c.id_estado === 7
-					? `<button class="btn btn-sm btn-warning"
-						onclick="editarCotizacion(${c.id_cotizacion})">
-						Editar
-						 </button>`
-					: ''
-				}
-				${
-					c.id_estado === 5
-					? `
-					<button class="btn btn-sm btn-danger me-1"
-						onclick="generarPDFHistorial(${c.id_cotizacion})">
-						PDF
+				<!-- Escritorio: botones completos -->
+				<div class="acciones-desktop">
+					<button class="btn btn-sm btn-primary" onclick="verDetalle(${c.id_cotizacion})">
+						<i class="bi bi-eye"></i> Ver
 					</button>
-					<button class="btn btn-sm btn-success"
-						onclick="aprobarCotizacion(${c.id_cotizacion})">
-						Aprobar
+					${itemsExtra.map(b => `
+						<button class="btn btn-sm btn-${b.clase}" onclick="${b.accion}">
+							<i class="bi ${b.icon}"></i> ${b.label}
+						</button>
+					`).join('')}
+				</div>
+
+				<!-- Móvil: menú desplegable compacto -->
+				<div class="acciones-mobile dropdown">
+					<button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+						<i class="bi bi-three-dots-vertical"></i>
 					</button>
-					<button class="btn btn-sm btn-danger"
-						onclick="anularCotizacion(${c.id_cotizacion})">
-						Anular
-					</button>
-					`
-					: ''
-				}
-				${
-					c.id_estado === 8
-					? `
-					<button class="btn btn-sm btn-danger me-1"
-						onclick="generarPDFHistorial(${c.id_cotizacion})">
-						PDF
-					</button>
-					`
-					: ''
-				}
+					<ul class="dropdown-menu dropdown-menu-end">
+						<li><a class="dropdown-item" href="#" onclick="verDetalle(${c.id_cotizacion}); return false;"><i class="bi bi-eye"></i> Ver</a></li>
+						${itemsExtra.map(b => `
+							<li><a class="dropdown-item ${b.clase === 'danger' ? 'text-danger' : ''}" href="#" onclick="${b.accion}; return false;"><i class="bi ${b.icon}"></i> ${b.label}</a></li>
+						`).join('')}
+					</ul>
+				</div>
 			</td>
 		`;
 
 		tbody.appendChild(tr);
 	});
 
-	if (tabla) {
-		tabla.destroy();
-	}
-
 	tabla = new DataTable('#tablaCotizaciones', {
 		responsive: true,
 		order: [[0, 'desc']],
+		columnDefs: [
+			{ responsivePriority: 1, targets: 0 }, // ID
+			{ responsivePriority: 2, targets: 1 }, // Cliente
+			{ responsivePriority: 6, targets: 2 }, // Fecha (se oculta primero)
+			{ responsivePriority: 3, targets: 3 }, // Estado
+			{ responsivePriority: 4, targets: 4 }, // Total
+			{ responsivePriority: 1, targets: 5 }, // Acciones (siempre visible)
+		],
 		language: {
 			search: 'Buscar:',
 			lengthMenu: 'Mostrar _MENU_ registros',
@@ -157,9 +202,9 @@ window.verDetalle = async function (idCotizacion) {
 
 		document.getElementById('detalleCliente').innerText = cab.cliente;
 		document.getElementById('detalleFecha').innerText = cab.fecha_cotizacion;
-		document.getElementById('detalleSubtotal').innerText = Number(cab.subtotal).toFixed(2);
-		document.getElementById('detalleIsv').innerText = Number(cab.isv).toFixed(2);
-		document.getElementById('detalleTotal').innerText = Number(cab.total).toFixed(2);
+		document.getElementById('detalleSubtotal').innerText = fmtMoneda.format(Number(cab.subtotal));
+		document.getElementById('detalleIsv').innerText = fmtMoneda.format(Number(cab.isv));
+		document.getElementById('detalleTotal').innerText = fmtMoneda.format(Number(cab.total));
 
 		const tbody = document.getElementById('detalleLineas');
 		tbody.innerHTML = '';
@@ -177,7 +222,7 @@ window.verDetalle = async function (idCotizacion) {
 				// Línea del camión
 				let tr = document.createElement('tr');
 				tr.innerHTML = `
-					<td colspan="4" style="background-color:#f0f0f0; font-weight:bold; text-align:center">${cam.camion}</td>
+					<td colspan="5" style="background-color:#f0f0f0; font-weight:bold; text-align:center">${cam.camion}</td>
 				`;
 				tbody.appendChild(tr);
 
@@ -191,10 +236,11 @@ window.verDetalle = async function (idCotizacion) {
 					if (l.id_servicio === null) return; // Saltar línea-camión
 					tr = document.createElement('tr');
 					tr.innerHTML = `
+						<td class="text-center">${l.codigo ?? ''}</td>
 						<td class="text-end">${l.cantidad}</td>
 						<td>&nbsp;&nbsp;&nbsp;${l.descripcion_servicio}</td>
-						<td class="text-end">${Number(l.precio_unitario).toFixed(2)}</td>
-						<td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
+						<td class="text-end">${fmtMoneda.format(Number(l.precio_unitario))}</td>
+						<td class="text-end">${fmtMoneda.format(Number(l.total_linea))}</td>
 					`;
 					tbody.appendChild(tr);
 				});
@@ -213,9 +259,10 @@ window.verDetalle = async function (idCotizacion) {
 					let tr = document.createElement('tr');
 					tr.innerHTML = `
 						<td></td>
+						<td></td>
 						<td style="text-align:center; font-weight:bold">${l.descripcion_servicio}</td>
 						<td></td>
-						<td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
+						<td class="text-end">${fmtMoneda.format(Number(l.total_linea))}</td>
 					`;
 					tbody.appendChild(tr);
 				});
@@ -232,10 +279,11 @@ window.verDetalle = async function (idCotizacion) {
 			det.forEach(l => {
 				const tr = document.createElement('tr');
 				tr.innerHTML = `
+					<td class="text-center">${l.codigo ?? ''}</td>
 					<td class="text-end">${l.cantidad}</td>
 					<td>${l.descripcion_servicio}</td>
-					<td class="text-end">${Number(l.precio_unitario).toFixed(2)}</td>
-					<td class="text-end">${Number(l.total_linea).toFixed(2)}</td>
+					<td class="text-end">${fmtMoneda.format(Number(l.precio_unitario))}</td>
+					<td class="text-end">${fmtMoneda.format(Number(l.total_linea))}</td>
 				`;
 				tbody.appendChild(tr);
 			});
@@ -244,7 +292,7 @@ window.verDetalle = async function (idCotizacion) {
 		modalDetalle.show();
 	} catch (err) {
 		console.error(err);
-		alert('Error cargando detalle de la cotización');
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar el detalle de la cotización.' });
 	}
 };
 
@@ -256,9 +304,19 @@ window.editarCotizacion = function (idCotizacion) {
 	window.location.href = `cotizaciones.html?id=${idCotizacion}&modo=editar`;
 };
 
-window.aprobarCotizacion = async function (idCotizacion) {
-	const confirmar = confirm('¿Desea aprobar esta cotización? Esta acción no se puede deshacer.');
-	if (!confirmar) return;
+window.aprobarCotizacion = async function (idCotizacion, btnEl) {
+	const confirmar = await Swal.fire({
+		title: '¿Aprobar cotización?',
+		text: 'Esta acción no se puede deshacer.',
+		icon: 'question',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, aprobar',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#198754'
+	});
+	if (!confirmar.isConfirmed) return;
+
+	if (btnEl) btnEl.disabled = true;
 
 	try {
 		const { error } = await supabase
@@ -268,17 +326,28 @@ window.aprobarCotizacion = async function (idCotizacion) {
 
 		if (error) throw error;
 
-		alert('Cotización aprobada correctamente');
+		Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cotización aprobada', showConfirmButton: false, timer: 2500 });
 		await cargarCotizaciones(); // refresca tabla
 	} catch (err) {
 		console.error(err);
-		alert('Error aprobando la cotización');
+		if (btnEl) btnEl.disabled = false;
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo aprobar la cotización.' });
 	}
 };
 
-window.anularCotizacion = async function (idCotizacion) {
-	const confirmar = confirm('¿Desea anular esta cotización? Esta acción no se puede deshacer.');
-	if (!confirmar) return;
+window.anularCotizacion = async function (idCotizacion, btnEl) {
+	const confirmar = await Swal.fire({
+		title: '¿Anular cotización?',
+		text: 'Esta acción no se puede deshacer.',
+		icon: 'warning',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, anular',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#dc3545'
+	});
+	if (!confirmar.isConfirmed) return;
+
+	if (btnEl) btnEl.disabled = true;
 
 	try {
 		const { error } = await supabase
@@ -288,11 +357,12 @@ window.anularCotizacion = async function (idCotizacion) {
 
 		if (error) throw error;
 
-		alert('Cotización anulada correctamente');
+		Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cotización anulada', showConfirmButton: false, timer: 2500 });
 		await cargarCotizaciones(); // refresca tabla
 	} catch (err) {
 		console.error(err);
-		alert('Error aprobando la cotización');
+		if (btnEl) btnEl.disabled = false;
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo anular la cotización.' });
 	}
 };
 
@@ -453,7 +523,7 @@ window.generarPDFHistorial = async function (idCotizacion) {
 
 	} catch (err) {
 		console.error(err);
-		alert(err.message || 'Error generando el PDF');
+		Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'No se pudo generar el PDF.' });
 	}
 };
 

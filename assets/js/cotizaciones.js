@@ -1,4 +1,6 @@
 import { supabase } from './supabase.js';
+
+const fmtMoneda = new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' });
 const { jsPDF } = window.jspdf; // ya lo hacías correctamente en generarPDF()
 
 // Datos de ejemplo (puedes reemplazar con consultas reales)
@@ -216,8 +218,8 @@ async function cargarCotizacionExistente(id){
 }
 
 // Choices.js
-let choiceCliente = new Choices('#selectCliente', {searchEnabled:true, removeItemButton:true});
-let choiceCamion = new Choices('#selectCamion', {searchEnabled:true});
+let choiceCliente = new Choices('#selectCliente', {searchEnabled:true, removeItemButton:true, itemSelectText: ''});
+let choiceCamion = new Choices('#selectCamion', {searchEnabled:true, itemSelectText: ''});
 
 function initDropdowns() {
 	choiceCliente.setChoices(clientes.map(c => ({ value: c.dni, label: c.nombre_legal })), 'value', 'label', false);
@@ -264,7 +266,7 @@ async function initDropdownsEditar() {
 	});
 	selectCamionElem.disabled = true;
 
-	choiceCamion = new Choices(selectCamionElem, { searchEnabled: true });
+	choiceCamion = new Choices(selectCamionElem, { searchEnabled: true, itemSelectText: '' });
 
 	if (cotizacion.id_camion) {
 		choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
@@ -477,11 +479,6 @@ function puedoAgregarCamion(id_camion) {
 	return true;
 }
 
-function agregarLineaServicio() {
-	// Legacy global add-line; now use per-camión buttons inside each camión card
-	alert('Use el botón "+ Agregar servicio" dentro de la tarjeta del camión correspondiente.');
-}
-
 function contarLineasTotales(){
 	// No contar las líneas de camión (es_camion: true) en el límite de 12
 	return cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.filter(l => !l.es_camion).length || 0), 0);
@@ -491,7 +488,7 @@ function agregarCamionSeleccionado(){
 	const sel = document.getElementById('selectCamion');
 	const id_camion = Number(sel.value);
 	if (Number.isNaN(id_camion)) {
-		alert('Seleccione un camión');
+		Swal.fire({ icon: 'warning', title: 'Seleccione un camión' });
 		return;
 	}
 
@@ -501,14 +498,14 @@ function agregarCamionSeleccionado(){
 	// Validar restricciones del tipo 5
 	if (!puedoAgregarCamion(id_camion)) {
 		if (esTipoCinco(id_camion)) {
-			alert('No se puede agregar un servicio general si ya hay camiones seleccioados.');
+			Swal.fire({ icon: 'warning', title: 'No permitido', text: 'No se puede agregar un servicio general si ya hay camiones seleccionados.' });
 		} else {
-			alert('No se pueden agregar camiones cuando hay un servicio general.');
+			Swal.fire({ icon: 'warning', title: 'No permitido', text: 'No se pueden agregar camiones cuando hay un servicio general.' });
 		}
 		return;
 	}
 
-	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	if (contarLineasTotales() + 1 > 12) { Swal.fire({ icon: 'warning', title: 'Límite alcanzado', text: 'Máximo 12 líneas por cotización.' }); return; }
 
 	const camionObj = {
 		id: null,
@@ -531,9 +528,9 @@ function agregarCamionSeleccionado(){
 }
 
 function agregarServicioPorcentaje(){
-	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	if (contarLineasTotales() + 1 > 12) { Swal.fire({ icon: 'warning', title: 'Límite alcanzado', text: 'Máximo 12 líneas por cotización.' }); return; }
 	// Solo permitir una sección especial
-	if (cotizacion.camiones.some(c => c.es_serv_porcentaje)) { alert('Ya existe una sección de "Porcentaje de servicio"'); return; }
+	if (cotizacion.camiones.some(c => c.es_serv_porcentaje)) { Swal.fire({ icon: 'warning', title: 'No permitido', text: 'Ya existe una sección de "Porcentaje de servicio".' }); return; }
 
 	const camObj = {
 		id: null,
@@ -587,7 +584,7 @@ function agregarLineaServicioEnCamion(idx_camion){
 	// Usar siempre el índice para evitar problemas con camiones duplicados
 	const cam = typeof idx_camion === 'number' ? cotizacion.camiones[idx_camion] : null;
 	if (!cam) return;
-	if (contarLineasTotales() + 1 > 12) { alert('Límite de 12 líneas alcanzado'); return; }
+	if (contarLineasTotales() + 1 > 12) { Swal.fire({ icon: 'warning', title: 'Límite alcanzado', text: 'Máximo 12 líneas por cotización.' }); return; }
 	
 	// Verificar si es tipo 5 para crear línea especial o normal
 	const esTipo5 = esTipoCinco(cam.id_camion);
@@ -607,8 +604,17 @@ function agregarLineaServicioEnCamion(idx_camion){
 	renderCamionesUI();
 }
 
-function eliminarCamionPorIndex(idx){
-	if (!confirm('Eliminar este camión y sus líneas?')) return;
+async function eliminarCamionPorIndex(idx){
+	const confirmar = await Swal.fire({
+		title: '¿Eliminar camión?',
+		text: 'Se eliminará este camión y todas sus líneas de servicio.',
+		icon: 'warning',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, eliminar',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#dc3545'
+	});
+	if (!confirmar.isConfirmed) return;
 	cotizacion.camiones.splice(idx,1);
 	cotizacion.camiones.forEach((c,i)=>c.orden = i+1);
 	if (cotizacion.camiones.length) {
@@ -636,7 +642,7 @@ function renderCamionesUI(){
 		let cardBodyHtml = '';
 			if (cam.es_serv_porcentaje) {
 			cardBodyHtml = `
-			<div class="card-body" style="overflow: visible; position: relative; z-index: 1;">
+			<div class="card-body" style="overflow: visible; position: relative;">
 				<div class="d-flex justify-content-between mb-2">
 					<h5>Porcentaje de servicio</h5>
 					<div>
@@ -649,8 +655,8 @@ function renderCamionesUI(){
 						<option value="porcentaje" ${cam.lineas[0].modo==='porcentaje' ? 'selected' : ''}>Porcentaje</option>
 					</select>
 				</div>
-				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
-					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
+				<div class="table-responsive" style="overflow: visible !important; position: relative;">
+					<table class="table table-bordered lineas-table" style="position: relative;">
 						<thead class="table-light">
 							<tr><th>#</th><th>Código</th><th>Servicio</th><th>Descripción</th><th>Cantidad / %</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
 						</thead>
@@ -662,7 +668,7 @@ function renderCamionesUI(){
 			`;
 		} else {
 			cardBodyHtml = `
-			<div class="card-body" style="overflow: visible; position: relative; z-index: 1;">
+			<div class="card-body" style="overflow: visible; position: relative;">
 				<div class="d-flex justify-content-between mb-2">
 					<h5>Camión ${cam.orden}</h5>
 					<div>
@@ -675,8 +681,8 @@ function renderCamionesUI(){
 				<div class="mb-2">
 					<button class="btn btn-sm btn-success" onclick="agregarLineaServicioEnCamion(${idx})">+ Agregar servicio</button>
 				</div>
-				<div class="table-responsive" style="overflow: visible !important; position: relative; z-index: 1;">
-					<table class="table table-bordered lineas-table" style="position: relative; z-index: 1;">
+				<div class="table-responsive" style="overflow: visible !important; position: relative;">
+					<table class="table table-bordered lineas-table" style="position: relative;">
 						<thead class="table-light">
 							<tr><th>#</th><th>Código</th><th>Servicio</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Acciones</th></tr>
 						</thead>
@@ -710,7 +716,7 @@ function renderCamionesUI(){
 					<td>Porcentaje de servicio</td>
 					<td>${l.modo === 'porcentaje' ? `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.precio_unitario = 0; recalcularTotales(); renderCamionesUI(); } })(event)">` : `<input type="input" class="form-control" value="${l.cantidad || 0}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario(linea.cantidad||0); recalcularTotales(); renderCamionesUI(); } })(event)">`}</td>
 					<td></td>
-					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td>${fmtMoneda.format(l.total_linea||0)}</td>
 					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
 				`;
 			} else if (l.es_tipo5 || l.id_servicio === 0) {
@@ -722,7 +728,7 @@ function renderCamionesUI(){
 					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
-					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td>${fmtMoneda.format(l.total_linea||0)}</td>
 					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
 				`;
 			} else {
@@ -734,7 +740,7 @@ function renderCamionesUI(){
 					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.precio_unitario}" step="0.01" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.precio_unitario = parseFloat(e.target.value)||0; linea.total_linea = redondeoBancario((linea.cantidad||0)*(parseFloat(e.target.value)||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
-					<td>${(l.total_linea||0).toFixed(2)}</td>
+					<td>${fmtMoneda.format(l.total_linea||0)}</td>
 					<td><button class="btn btn-sm btn-danger" onclick="(function(){ const idx_lin = cotizacion.camiones[${idx}].lineas.findIndex(ll => ll.id_linea === '${l.id_linea}'); if(idx_lin >= 0) cotizacion.camiones[${idx}].lineas.splice(idx_lin,1); renderCamionesUI(); recalcularTotales(); })()">Eliminar</button></td>
 				`;
 			}
@@ -756,7 +762,8 @@ function renderCamionesUI(){
 						placeholderValue: 'Seleccione una opción', 
 						removeItemButton: false, 
 						shouldSort: false,
-						maxItemCount: 1
+						maxItemCount: 1,
+						itemSelectText: ''
 					});
 					sel.choicesInstance = choices;
 					// Aplicar estilos adicionales al contenedor de Choices creado
@@ -772,9 +779,9 @@ function renderCamionesUI(){
 	});
 
 	// actualizar display de totales
-	document.getElementById('subtotal').innerText = cotizacion.totales.subtotal.toFixed(2);
-	document.getElementById('isv').innerText = cotizacion.totales.isv.toFixed(2);
-	document.getElementById('total').innerText = cotizacion.totales.total.toFixed(2);
+	document.getElementById('subtotal').innerText = fmtMoneda.format(cotizacion.totales.subtotal);
+	document.getElementById('isv').innerText = fmtMoneda.format(cotizacion.totales.isv);
+	document.getElementById('total').innerText = fmtMoneda.format(cotizacion.totales.total);
 }
 
 function clienteManual() {
@@ -829,7 +836,7 @@ function actualizarTabla() {
 				<td><input type="text" class="form-control" value="${l.descripcion}" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarDescripcion(event)"></td>
 				<td><input type="number" class="form-control" value="${l.cantidad || 1}" min="1" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarCantidad(event)"></td>
 				<td><input type="number" class="form-control" value="${l.precio_unitario || 0}" min="0" step="0.01" ${!esEditable() ? 'readonly' : ''} data-id="${l.id_linea}" onchange="editarPrecio(event)"></td>
-				<td>${l.total_linea.toFixed(2)}</td>
+				<td>${fmtMoneda.format(l.total_linea)}</td>
 				<td>${esEditable() ? `<button class="btn btn-danger btn-sm" onclick="eliminarLinea('${l.id_linea}')">Eliminar</button>` : ''}</td>
 			`;
 		}
@@ -849,7 +856,8 @@ function actualizarTabla() {
 					placeholderValue: 'Seleccione una opción',
 					removeItemButton: false,
 					shouldSort: false,
-					maxItemCount: 1
+					maxItemCount: 1,
+					itemSelectText: ''
 				});
 
 				select.choicesInstance = choices;
@@ -866,9 +874,9 @@ function actualizarTabla() {
 	});
 
 	// Totales
-	document.getElementById('subtotal').innerText = cotizacion.totales.subtotal.toFixed(2);
-	document.getElementById('isv').innerText = cotizacion.totales.isv.toFixed(2);
-	document.getElementById('total').innerText = cotizacion.totales.total.toFixed(2);
+	document.getElementById('subtotal').innerText = fmtMoneda.format(cotizacion.totales.subtotal);
+	document.getElementById('isv').innerText = fmtMoneda.format(cotizacion.totales.isv);
+	document.getElementById('total').innerText = fmtMoneda.format(cotizacion.totales.total);
 }
 
 function generarDropdownServicio(id_camion, id_linea, id_servicio_seleccionado) {
@@ -888,7 +896,7 @@ function generarDropdownServicio(id_camion, id_linea, id_servicio_seleccionado) 
 	disponibles.forEach(s => {
 		const option = document.createElement('option');
 		option.value = s.id_servicio;
-		option.text = s.servicio;
+		option.text = s.codigo ? `${s.codigo} — ${s.servicio}` : s.servicio;
 		if (s.id_servicio === id_servicio_seleccionado) option.selected = true;
 		select.appendChild(option);
 	});
@@ -1042,7 +1050,7 @@ function esEditable(){
 }
 
 // ---------------- Guardado ----------------
-async function guardarParcial(cot){
+async function guardarParcial(cot, opts = {}){
 	try{
 		if (cot.estado !== 7) return;
 
@@ -1096,10 +1104,12 @@ async function guardarParcial(cot){
 		// ---------------- DETALLE (por camiones) ----------------
 		await guardarDetallePorCamiones(cot.id_cotizacion);
 
-		alert('Cotización guardada');
+		if (!opts.silencioso) {
+			Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cotización guardada', showConfirmButton: false, timer: 2500 });
+		}
 	} catch(err){
 		console.error(err);
-		alert('Error guardando cotización');
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo guardar la cotización.' });
 	}
 }
 
@@ -1256,7 +1266,7 @@ async function guardarDetallePorCamiones(idCotizacion){
 // ---------------- Emitir ----------------
 async function emitirCotizacion(cot){
 	if (cot.estado !== 7) {
-		alert('Esta cotización no puede ser emitida');
+		Swal.fire({ icon: 'warning', title: 'No se puede emitir', text: 'Esta cotización no puede ser emitida.' });
 		return;
 	}
 	try{
@@ -1265,13 +1275,13 @@ async function emitirCotizacion(cot){
 			sincronizarClienteManual();
 			determinarTipoCliente();
 			if (!cot.cliente.nombre || !cot.cliente.dni) {
-				alert('Debe ingresar al menos Nombre y DNI del cliente');
+				Swal.fire({ icon: 'warning', title: 'Datos incompletos', text: 'Debe ingresar al menos Nombre y DNI del cliente.' });
 				return;
 			}
 
 			const dniDisponible = await validarDNINoDuplicado(cot.cliente.dni);
 			if (!dniDisponible) {
-				alert('El DNI ingresado ya existe. Seleccione el cliente desde la lista.');
+				Swal.fire({ icon: 'warning', title: 'DNI ya registrado', text: 'El DNI ingresado ya existe. Seleccione el cliente desde la lista.' });
 				return;
 			}
 
@@ -1279,7 +1289,7 @@ async function emitirCotizacion(cot){
 			.from('clientes')
 			.insert([{
 				nombre_legal: cot.cliente.nombre || document.getElementById('inputClienteNombre').value,
-				direccion: cot.cliente.direccion || document.getElementById('inputClienteDireccion').value,
+				direccion: cot.cliente.direccion || '',
 				dni: cot.cliente.dni || document.getElementById('inputDNI').value,
 				rtn: cot.cliente.rtn || document.getElementById('inputRTN').value,
 				estado: 1
@@ -1312,19 +1322,19 @@ async function emitirCotizacion(cot){
 			};
 		}
 
-		await guardarParcial(cot);
+		await guardarParcial(cot, { silencioso: true });
 
 		const { error: updErr } = await supabase.from('cotizaciones')
 			.update({id_estado:5})
 			.eq('id_cotizacion', cot.id_cotizacion);
 		if(updErr) throw updErr;
 
-		alert('Cotización emitida');
+		await Swal.fire({ icon: 'success', title: 'Cotización emitida', timer: 2000, showConfirmButton: false });
 		await generarPDF(cot);
 		window.location.href = 'cotizaciones_historial.html';
 	} catch(err){
 		console.error(err);
-		alert('Error emitiendo cotización');
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo emitir la cotización.' });
 	}
 }
 
@@ -1612,7 +1622,16 @@ function numeroALetras(num) {
 async function anularCotizacion(){
 	if (!cotizacion.id_cotizacion) return;
 
-	if (!confirm('¿Está seguro de anular esta cotización?')) return;
+	const confirmar = await Swal.fire({
+		title: '¿Anular cotización?',
+		text: 'Esta acción no se puede deshacer.',
+		icon: 'warning',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, anular',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#dc3545'
+	});
+	if (!confirmar.isConfirmed) return;
 
 	const { error } = await supabase
 		.from('cotizaciones')
@@ -1620,11 +1639,11 @@ async function anularCotizacion(){
 		.eq('id_cotizacion', cotizacion.id_cotizacion);
 
 	if (error) {
-		alert('Error al anular la cotización');
+		Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo anular la cotización.' });
 		return;
 	}
 
-	alert('Cotización anulada');
+	await Swal.fire({ icon: 'success', title: 'Cotización anulada', timer: 2000, showConfirmButton: false });
 	window.location.href = 'cotizaciones_historial.html';
 }
 
@@ -1706,7 +1725,8 @@ function initDropdownDirecciones(valorSeleccionado = null) {
 		duplicateItemsAllowed: false,
 		addChoices: true,
 		addItemText: value => `Agregar "${value}" (presiona Enter para agregar)`,
-		shouldSort: false
+		shouldSort: false,
+		itemSelectText: ''
 	});
 
 	if (valorSeleccionado) {
@@ -1768,11 +1788,17 @@ async function cambiarCamion() {
 
 	if (cotizacion.estado !== 7) return;
 
-	const confirmar = confirm(
-		'Cambiar el camión eliminará todos los camiones y servicios agregados. ¿Desea continuar?'
-	);
+	const confirmar = await Swal.fire({
+		title: '¿Cambiar el camión?',
+		text: 'Se eliminarán todos los camiones y servicios agregados en esta cotización.',
+		icon: 'warning',
+		showCancelButton: true,
+		confirmButtonText: 'Sí, cambiar',
+		cancelButtonText: 'Cancelar',
+		confirmButtonColor: '#dc3545'
+	});
 
-	if (!confirmar) return;
+	if (!confirmar.isConfirmed) return;
 
 	cotizacion.camiones = [];
 	cotizacion.lineas = [];
@@ -1797,7 +1823,8 @@ async function cambiarCamion() {
 	});
 
 	choiceCamion = new Choices(selectCamion, {
-		searchEnabled: true
+		searchEnabled: true,
+		itemSelectText: ''
 	});
 	
 	choiceCamion.enable();
