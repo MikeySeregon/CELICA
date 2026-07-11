@@ -42,6 +42,7 @@ class MiHeader extends HTMLElement {
 								Servicios
 							</a>
 							<ul class="dropdown-menu" aria-labelledby="serviciosDropdown">
+								<li><a class="dropdown-item" href="categorias.html">Categorías</a></li>
 								<li><a class="dropdown-item" href="servicios.html">Listado de Servicios</a></li>
 								<li><a class="dropdown-item" href="precio_servicio.html">Precios por Servicio</a></li>
 							</ul>

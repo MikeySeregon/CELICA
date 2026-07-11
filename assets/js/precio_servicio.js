@@ -26,6 +26,34 @@ const selectServicio = new Choices(selectServicioEl, {
 
 let camiones = [];
 let servicios = [];
+let ultimoCodigoSugerido = '';
+
+// Sugiere un código (servicio-categoria-camión) sin sobrescribir texto que el usuario haya escrito a mano
+async function sugerirCodigo() {
+	const id_camion = selectCamion.getValue(true);
+	const id_servicio = selectServicio.getValue(true);
+	if (!id_camion || !id_servicio) return;
+
+	const { data: servicio, error } = await supabase
+		.from('servicios')
+		.select('codigo, categorias(codigo)')
+		.eq('id_servicio', id_servicio)
+		.single();
+
+	if (error || !servicio) return;
+
+	const codServicio = servicio.codigo || '';
+	const codCategoria = servicio.categorias?.codigo || '';
+	const codCamion = String(id_camion).padStart(2, '0');
+	const sugerido = [codServicio, codCategoria, codCamion].filter(Boolean).join('-');
+
+	// Solo autocompletar si el campo está vacío o todavía tiene la última sugerencia
+	// (así no se pisa un código que el usuario ya haya editado a mano)
+	if (!inputCodigo.value || inputCodigo.value === ultimoCodigoSugerido) {
+		inputCodigo.value = sugerido;
+		ultimoCodigoSugerido = sugerido;
+	}
+}
 
 // Cargar camiones activos
 async function cargarCamiones() {
@@ -126,6 +154,7 @@ btnGuardarPrecio.addEventListener('click', async () => {
 	} else {
 		listarPrecios(id_camion);
 		inputCodigo.value = '';
+		ultimoCodigoSugerido = '';
 		inputPrecio.value = '';
 		fechaInicio.value = '';
 		fechaFin.value = '';
@@ -166,6 +195,8 @@ window.modificarPrecio = async (id) => {
 
 // Eventos
 selectCamionEl.addEventListener('change', () => listarPrecios(selectCamion.getValue(true)));
+selectCamionEl.addEventListener('change', sugerirCodigo);
+selectServicioEl.addEventListener('change', sugerirCodigo);
 
 // Inicializar
 cargarCamiones().then(() => listarPrecios(selectCamion.getValue(true)));

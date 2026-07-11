@@ -3,12 +3,28 @@ import { supabase } from './supabase.js';
 const form = document.getElementById('formServicio');
 const tablaBody = document.querySelector('#tablaServicios tbody');
 const btnCancelar = document.getElementById('btnCancelar');
+const inputCodigo = document.getElementById('codigoServicio');
+const selectCategoria = document.getElementById('idCategoria');
 let tablaServiciosDT = null;
+
+async function listarCategorias() {
+	const { data, error } = await supabase
+		.from('categorias')
+		.select('*')
+		.eq('estado', 1);
+
+	if (error) return console.error(error);
+
+	selectCategoria.innerHTML = '<option value="">Sin categoría</option>';
+	data.forEach(cat => {
+		selectCategoria.innerHTML += `<option value="${cat.id_categoria}">${cat.codigo} - ${cat.nombre}</option>`;
+	});
+}
 
 async function listarServicios() {
 	const { data, error } = await supabase
 		.from('servicios')
-		.select('*')
+		.select('*, categorias(id_categoria, codigo, nombre)')
 		.order('id_servicio', { ascending: true });
 
 	if (error) return console.error(error);
@@ -28,6 +44,8 @@ async function listarServicios() {
 			<button class="btn btn-sm btn-warning btn-edit" 
 					data-id="${servicio.id_servicio}" 
 					data-tipo="${servicio.servicio}" 
+					data-codigo="${servicio.codigo || ''}" 
+					data-id-categoria="${servicio.id_categoria || ''}" 
 					data-descripcion="${servicio.descripcion || ''}">Editar</button>
 		`;
 
@@ -42,6 +60,8 @@ async function listarServicios() {
 			<tr>
 				<td>${servicio.id_servicio}</td>
 				<td>${servicio.servicio}</td>
+				<td>${servicio.codigo || ''}</td>
+				<td>${servicio.categorias?.nombre || ''}</td>
 				<td>${servicio.descripcion || ''}</td>
 				<td>${estadoTexto}</td>
 				<td>${acciones}</td>
@@ -61,7 +81,7 @@ async function listarServicios() {
 			{ responsivePriority: 2, targets: 1 }, // 
 			/*{ responsivePriority: 3, targets: 2 }, //*/
 			/*{ responsivePriority: 4, targets: 3 }, //*/
-			{ responsivePriority: 5, targets: 4 }, // 
+			{ responsivePriority: 5, targets: 6 }, // 
 		],
 		language: {
 			search: "Buscar:",
@@ -100,25 +120,36 @@ form.addEventListener('submit', async (e) => {
 	const id = document.getElementById('idServicio').value;
 	const servicio = document.getElementById('servicio').value;
 	const descripcion = document.getElementById('descripcion').value;
+	const codigo = inputCodigo.value.trim().toUpperCase() || null;
+	const id_categoria = selectCategoria.value || null;
 
 	if (id) {
 		// Actualizar
 		const { error } = await supabase
 			.from('servicios')
-			.update({ servicio, descripcion })
+			.update({ servicio, descripcion, codigo, id_categoria })
 			.eq('id_servicio', id);
-		if (error) return console.error(error);
+		if (error) return manejarErrorGuardado(error);
 	} else {
 		// Insertar
 		const { error } = await supabase
 			.from('servicios')
-			.insert({ servicio, descripcion });
-		if (error) return console.error(error);
+			.insert({ servicio, descripcion, codigo, id_categoria });
+		if (error) return manejarErrorGuardado(error);
 	}
 
 	form.reset();
 	listarServicios();
 });
+
+function manejarErrorGuardado(error) {
+	if (error.code === '23505') {
+		alert('Ese código ya está en uso por otro servicio activo. Use un código distinto.');
+	} else {
+		console.error(error);
+		alert('Error al guardar: ' + error.message);
+	}
+}
 
 // Función para editar un servicio
 async function editarServicio(e) {
@@ -127,6 +158,8 @@ async function editarServicio(e) {
 	document.getElementById('idServicio').value = btn.dataset.id;
 	document.getElementById('servicio').value = btn.dataset.tipo;
 	document.getElementById('descripcion').value = btn.dataset.descripcion;
+	inputCodigo.value = btn.dataset.codigo || '';
+	selectCategoria.value = btn.dataset.idCategoria || '';
 };
 
 // Función para activar/desactivar
@@ -154,4 +187,5 @@ async function desactivarServicio(e) {
 btnCancelar.addEventListener('click', () => form.reset());
 
 // Inicializar listado
+listarCategorias();
 listarServicios();
