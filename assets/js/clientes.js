@@ -70,6 +70,15 @@ function renderTabla(data) {
 		`;
 	});
 
+	// Eventos (ANTES de inicializar DataTables, ver nota en servicios.js)
+	document.querySelectorAll('.btnEditar').forEach(btn => {
+		btn.addEventListener('click', () => cargarCliente(btn.dataset.id));
+	});
+
+	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
+	});
+
 	tablaClientesDT = $('#tablaClientes').DataTable({
 		responsive: {
 			details: {
@@ -92,15 +101,6 @@ function renderTabla(data) {
 			},
 			zeroRecords: "No se encontraron clientes"
 		}
-	});
-
-	// Eventos
-	document.querySelectorAll('.btnEditar').forEach(btn => {
-		btn.addEventListener('click', () => cargarCliente(btn.dataset.id));
-	});
-
-	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
-		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
 	});
 }
 

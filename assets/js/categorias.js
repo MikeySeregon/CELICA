@@ -65,6 +65,15 @@ function renderTabla(data) {
 		`;
 	});
 
+	// Listeners ANTES de inicializar DataTables (ver nota en servicios.js)
+	document.querySelectorAll('.btnEditar').forEach(btn => {
+		btn.addEventListener('click', () => cargarCategoria(btn.dataset.id));
+	});
+
+	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
+	});
+
 	tablaCategoriasDT = $('#tablaCategorias').DataTable({
 		responsive: {
 			details: {
@@ -86,14 +95,6 @@ function renderTabla(data) {
 			},
 			zeroRecords: "No se encontraron categorías"
 		}
-	});
-
-	document.querySelectorAll('.btnEditar').forEach(btn => {
-		btn.addEventListener('click', () => cargarCategoria(btn.dataset.id));
-	});
-
-	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
-		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
 	});
 }
 

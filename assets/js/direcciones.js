@@ -65,6 +65,15 @@ function renderTabla(data) {
 		`;
 	});
 
+	// Eventos (ANTES de inicializar DataTables, ver nota en servicios.js)
+	document.querySelectorAll('.btnEditar').forEach(btn => {
+		btn.addEventListener('click', () => cargarDireccion(btn.dataset.id));
+	});
+
+	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
+		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
+	});
+
 	tablaDireccionesDT = $('#tablaDirecciones').DataTable({
 		responsive: {
 			details: {
@@ -86,15 +95,6 @@ function renderTabla(data) {
 			},
 			zeroRecords: "No se encontraron direcciones"
 		}
-	});
-
-	// Eventos
-	document.querySelectorAll('.btnEditar').forEach(btn => {
-		btn.addEventListener('click', () => cargarDireccion(btn.dataset.id));
-	});
-
-	document.querySelectorAll('.btnToggleEstado').forEach(btn => {
-		btn.addEventListener('click', () => toggleEstado(btn.dataset.id, btn.dataset.estado));
 	});
 }
 
