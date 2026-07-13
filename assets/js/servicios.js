@@ -7,9 +7,14 @@ const inputCodigo = document.getElementById('codigoServicio');
 const selectCategoria = document.getElementById('idCategoria');
 const filtroCategoria = document.getElementById('filtroCategoria');
 const formTitulo = document.getElementById('formTitulo');
+const btnDescargarPlantillaServicios = document.getElementById('btnDescargarPlantillaServicios');
+const btnProcesarPlantillaServicios = document.getElementById('btnProcesarPlantillaServicios');
+const inputArchivoServicios = document.getElementById('inputArchivoServicios');
+const resultadoPlantillaServicios = document.getElementById('resultadoPlantillaServicios');
 let tablaServiciosDT = null;
 
 let cacheServicios = [];
+let cacheCategoriasDisponibles = [];
 let filtroEstado = '';
 let filtroCategoriaActiva = '';
 
@@ -22,6 +27,7 @@ async function listarCategorias() {
 
 	if (error) return console.error(error);
 
+	cacheCategoriasDisponibles = data || [];
 	selectCategoria.innerHTML = '<option value="">Sin categoría</option>';
 	filtroCategoria.innerHTML = '<option value="">Todas las categorías</option>';
 	data.forEach(cat => {
@@ -259,6 +265,167 @@ function resetFormulario() {
 	formTitulo.textContent = 'Agregar servicio';
 }
 btnCancelar.addEventListener('click', resetFormulario);
+
+// --- Carga masiva de servicios (permite insert y update) --- //
+
+btnDescargarPlantillaServicios.addEventListener('click', () => {
+	const wb = XLSX.utils.book_new();
+
+	// Hoja de referencia: categorías válidas (no es un dropdown nativo, solo guía)
+	const filasCategorias = cacheCategoriasDisponibles.map(c => ({
+		'Código de categoría': c.codigo,
+		'Nombre': c.nombre
+	}));
+	const wsInfo = XLSX.utils.aoa_to_sheet([
+		['Instrucciones'],
+		['- Si el nombre del servicio ya existe, se actualiza su código, categoría y descripción.'],
+		['- Si el nombre no existe, se crea un servicio nuevo.'],
+		['- Puedes agregar tantas filas como necesites.'],
+		['- El campo "Servicio" es obligatorio; el resto son opcionales.'],
+		['- Si un nombre se repite dentro del mismo archivo, solo se procesa la primera aparición.'],
+		['- En "Código de categoría" usa exactamente uno de los códigos listados abajo. Si no coincide con ninguno, el servicio se guarda sin categoría.'],
+		[],
+		['Categorías válidas:']
+	]);
+	XLSX.utils.sheet_add_json(wsInfo, filasCategorias, { origin: 'A9' });
+	wsInfo['!cols'] = [{ wch: 60 }, { wch: 30 }];
+	XLSX.utils.book_append_sheet(wb, wsInfo, 'Info');
+
+	// Hoja de datos a llenar
+	const wsServicios = XLSX.utils.json_to_sheet([{
+		'Servicio': '',
+		'Código': '',
+		'Código de categoría': '',
+		'Descripción': ''
+	}]);
+	wsServicios['!cols'] = [{ wch: 35 }, { wch: 14 }, { wch: 18 }, { wch: 40 }];
+	XLSX.utils.book_append_sheet(wb, wsServicios, 'Servicios');
+
+	XLSX.writeFile(wb, 'plantilla_servicios.xlsx');
+	Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Plantilla descargada', showConfirmButton: false, timer: 2200 });
+});
+
+btnProcesarPlantillaServicios.addEventListener('click', async () => {
+	const archivo = inputArchivoServicios.files[0];
+	if (!archivo) {
+		Swal.fire({ icon: 'warning', title: 'Falta el archivo', text: 'Selecciona un archivo de plantilla (.xlsx).' });
+		return;
+	}
+
+	resultadoPlantillaServicios.innerHTML = '<em>Procesando...</em>';
+
+	let filas;
+	try {
+		const buffer = await archivo.arrayBuffer();
+		const wb = XLSX.read(buffer, { type: 'array' });
+		const hoja = wb.Sheets['Servicios'] || wb.Sheets[wb.SheetNames[0]];
+		filas = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+	} catch (err) {
+		resultadoPlantillaServicios.innerHTML = `<span class="text-danger">No se pudo leer el archivo: ${err.message}</span>`;
+		return;
+	}
+
+	// Nombres ya existentes (para actualizar en vez de duplicar)
+	const { data: existentes, error: errExistentes } = await supabase
+		.from('servicios')
+		.select('id_servicio, servicio');
+
+	if (errExistentes) {
+		resultadoPlantillaServicios.innerHTML = `<span class="text-danger">No se pudo verificar servicios existentes: ${errExistentes.message}</span>`;
+		return;
+	}
+
+	const mapaExistentes = new Map((existentes || []).map(s => [s.servicio.trim().toLowerCase(), s.id_servicio]));
+	const nombresEnEsteArchivo = new Set();
+
+	let insertados = 0, actualizados = 0, omitidos = 0;
+	const advertencias = [];
+	const errores = [];
+
+	for (const fila of filas) {
+		const nombre = String(fila['Servicio'] ?? '').trim();
+
+		// Fila sin nombre = no hay nada que crear, se omite sin marcarlo como error
+		if (!nombre) {
+			omitidos++;
+			continue;
+		}
+
+		const nombreNormalizado = nombre.toLowerCase();
+
+		if (nombresEnEsteArchivo.has(nombreNormalizado)) {
+			advertencias.push(`"${nombre}": está repetido dentro del mismo archivo, solo se procesó la primera aparición.`);
+			omitidos++;
+			continue;
+		}
+		nombresEnEsteArchivo.add(nombreNormalizado);
+
+		const codigo = String(fila['Código'] ?? '').trim().toUpperCase() || null;
+		const descripcion = String(fila['Descripción'] ?? '').trim() || null;
+		const codigoCategoriaTexto = String(fila['Código de categoría'] ?? '').trim();
+
+		let id_categoria = null;
+		if (codigoCategoriaTexto) {
+			const categoria = cacheCategoriasDisponibles.find(c => c.codigo.toLowerCase() === codigoCategoriaTexto.toLowerCase());
+			if (categoria) {
+				id_categoria = categoria.id_categoria;
+			} else {
+				advertencias.push(`"${nombre}": el código de categoría "${codigoCategoriaTexto}" no coincide con ninguna categoría activa, se guardó sin categoría.`);
+			}
+		}
+
+		const idExistente = mapaExistentes.get(nombreNormalizado);
+
+		if (idExistente) {
+			// Ya existe un servicio con ese nombre: actualizar código, categoría y descripción
+			const { error } = await supabase
+				.from('servicios')
+				.update({ codigo, id_categoria, descripcion })
+				.eq('id_servicio', idExistente);
+
+			if (error) {
+				if (error.code === '23505') {
+					errores.push(`"${nombre}": el código "${codigo}" ya está en uso por otro servicio activo.`);
+				} else {
+					errores.push(`"${nombre}": ${error.message}`);
+				}
+			} else {
+				actualizados++;
+			}
+			continue;
+		}
+
+		const { error } = await supabase
+			.from('servicios')
+			.insert({ servicio: nombre, codigo, id_categoria, descripcion });
+
+		if (error) {
+			if (error.code === '23505') {
+				errores.push(`"${nombre}": el código "${codigo}" ya está en uso por otro servicio activo.`);
+			} else {
+				errores.push(`"${nombre}": ${error.message}`);
+			}
+		} else {
+			insertados++;
+		}
+	}
+
+	let resumen = `<div class="alert alert-info">Procesado: ${insertados} nuevo(s), ${actualizados} actualizado(s), ${omitidos} omitido(s).</div>`;
+	if (advertencias.length) {
+		resumen += `<div class="alert alert-warning"><strong>${advertencias.length} advertencia(s):</strong><ul class="mb-0">${advertencias.map(a => `<li>${a}</li>`).join('')}</ul></div>`;
+	}
+	if (errores.length) {
+		resumen += `<div class="alert alert-danger"><strong>${errores.length} error(es):</strong><ul class="mb-0">${errores.map(e => `<li>${e}</li>`).join('')}</ul></div>`;
+	}
+	resultadoPlantillaServicios.innerHTML = resumen;
+
+	inputArchivoServicios.value = '';
+	listarServicios();
+
+	if (errores.length === 0) {
+		Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Plantilla procesada', showConfirmButton: false, timer: 2500 });
+	}
+});
 
 // Inicializar listado
 listarCategorias();
