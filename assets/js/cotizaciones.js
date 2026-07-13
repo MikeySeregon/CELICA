@@ -594,6 +594,7 @@ function agregarLineaServicioEnCamion(idx_camion){
 		id: null,
 		id_servicio: esTipo5 ? 0 : null, // 0 para tipo 5, null para líneas normales
 		descripcion: '',
+		codigo: esTipo5 ? 'ACT21-COR-VARIOS' : null, // Código fijo de Cortinas para líneas tipo 5
 		precio_unitario: 0,
 		cantidad: 1,
 		total_linea: 0,
@@ -723,7 +724,7 @@ function renderCamionesUI(){
 				// Línea especial: sin dropdown, solo descripción, cantidad y precio
 				tr.innerHTML = `
 					<td>${numFila}</td>
-					<td></td>
+					<td>${l.codigo ?? ''}</td>
 					<td><em>Sin servicio</em></td>
 					<td><input type="text" class="form-control" value="${l.descripcion}" data-linea-id="${l.id_linea}" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) linea.descripcion = e.target.value; })(event)"></td>
 					<td><input type="number" class="form-control" value="${l.cantidad}" min="1" onchange="(function(e){ const linea = cotizacion.camiones[${idx}].lineas.find(ll => ll.id_linea === '${l.id_linea}'); if(linea) { linea.cantidad = parseInt(e.target.value)||0; linea.total_linea = redondeoBancario((parseInt(e.target.value)||0) * (linea.precio_unitario||0)); renderCamionesUI(); recalcularTotales(); } })(event)"></td>
