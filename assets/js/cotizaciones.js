@@ -264,26 +264,21 @@ async function initDropdownsEditar() {
 		option.text = op.label;
 		selectCamionElem.add(option);
 	});
-	selectCamionElem.disabled = true;
+	selectCamionElem.disabled = !esEditable();
 
 	choiceCamion = new Choices(selectCamionElem, { searchEnabled: true, itemSelectText: '' });
 
 	if (cotizacion.id_camion) {
 		choiceCamion.setChoiceByValue(String(cotizacion.id_camion));
-		choiceCamion.disable();
-		/*document.getElementById('btnAgregarLinea').disabled = false;*/
-	}
 
-	if (cotizacion.id_camion) {
-
-		choiceCamion.setChoiceByValue(
-			String(cotizacion.id_camion)
-		);
-
-		choiceCamion.disable();
-
-		if (cotizacion.estado === 7) {
+		if (esEditable()) {
+			// Cotización aún Parcial: el selector se deja activo para poder
+			// agregar camiones de otro tipo con "Agregar camión".
+			// "Cambiar camión" sigue disponible para reiniciar todo si se prefiere.
 			document.getElementById('btnCambiarCamion').style.display = 'inline-block';
+		} else {
+			// Cotización ya no editable (emitida/anulada): selector bloqueado
+			choiceCamion.disable();
 		}
 	}
 }
@@ -403,7 +398,7 @@ function obtenerServiciosDisponibles(id_camion, id_linea) {
 }
 
 async function seleccionarCamion(e) {
-	if (modo === 'editar' && cotizacion.camiones.length > 0)
+	if (modo === 'editar' && !esEditable())
 	{
 		e.target.value = cotizacion.id_camion;
 		return;
