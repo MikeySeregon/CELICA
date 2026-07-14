@@ -409,45 +409,13 @@ async function seleccionarCamion(e) {
 		return;
 	}
 	const id = parseInt(e.target.value);
-	/*if (cotizacion.id_camion && cotizacion.camiones.some(cam => (cam.lineas||[]).some(l => !l.es_camion))) {
-		alert('No se puede cambiar el camión con servicios agregados.');
-		e.target.value = cotizacion.id_camion;
-		return;
-	}*/
+	if (Number.isNaN(id)) return;
 
-	cotizacion.id_camion = id;
-	cotizacion.camion = getSelectedText(e.target);
-	choiceCamion.disable();
-
-	document.getElementById('btnCambiarCamion').style.display =
-		cotizacion.estado === 7
-			? 'inline-block'
-			: 'none';
+	// Solo precargamos los precios del camión resaltado en el dropdown.
+	// El camión se agrega a la cotización únicamente al presionar "Agregar camión"
+	// (ver agregarCamionSeleccionado), lo que permite elegir y agregar varios
+	// tipos distintos sin bloquear el selector.
 	await cargarPreciosCamion(id);
-
-	// legacy: si no hay camiones añadidos automáticamente, agregar la línea camión principal
-	if (!cotizacion.camiones.length) {
-		agregarLineaCamion();
-		/*document.getElementById('btnAgregarLinea').disabled = false;*/
-	}
-
-	renderCamionesUI();
-}
-
-function agregarLineaCamion() {
-	// Legacy helper: convertir a estructura de camiones si no existe
-	if (!cotizacion.camiones.length) {
-		const sel = document.getElementById('selectCamion');
-		const id_cam = parseInt(sel.value) || cotizacion.id_camion;
-		const camionObj = {
-			id: null,
-			id_camion: id_cam,
-			camion: getSelectedText(document.getElementById('selectCamion')) || cotizacion.camion || '',
-			orden: 1,
-			lineas: []
-		};
-		cotizacion.camiones.push(camionObj);
-	}
 }
 
 function getSelectedText(select) {
