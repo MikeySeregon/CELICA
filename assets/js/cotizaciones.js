@@ -735,12 +735,19 @@ function renderCamionesUI(){
 						itemSelectText: ''
 					});
 					sel.choicesInstance = choices;
-					// Aplicar estilos adicionales al contenedor de Choices creado
+					// El z-index solo se eleva mientras el dropdown está abierto, para que
+					// no le gane siempre al de la tarjeta siguiente por estar más abajo en el DOM
 					const choicesContainer = sel.closest('.choices');
 					if (choicesContainer) {
 						choicesContainer.style.position = 'relative';
-						choicesContainer.style.zIndex = '1000';
+						choicesContainer.style.zIndex = '1';
 					}
+					sel.addEventListener('showDropdown', () => {
+						if (choicesContainer) choicesContainer.style.zIndex = '3000';
+					});
+					sel.addEventListener('hideDropdown', () => {
+						if (choicesContainer) choicesContainer.style.zIndex = '1';
+					});
 					sel.addEventListener('change', function(e){ cambiarServicioEnCamion(e, camIdx, l.id_linea); });
 				}
 			}
@@ -830,12 +837,18 @@ function actualizarTabla() {
 				});
 
 				select.choicesInstance = choices;
-				// Aplicar estilos adicionales al contenedor de Choices creado
+				// El z-index solo se eleva mientras el dropdown está abierto
 				const choicesContainer = select.closest('.choices');
 				if (choicesContainer) {
 					choicesContainer.style.position = 'relative';
-					choicesContainer.style.zIndex = '1000';
+					choicesContainer.style.zIndex = '1';
 				}
+				select.addEventListener('showDropdown', () => {
+					if (choicesContainer) choicesContainer.style.zIndex = '3000';
+				});
+				select.addEventListener('hideDropdown', () => {
+					if (choicesContainer) choicesContainer.style.zIndex = '1';
+				});
 
 				select.addEventListener('change', cambiarServicioLinea);
 			}
