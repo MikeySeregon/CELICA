@@ -443,8 +443,30 @@ function puedoAgregarCamion(id_camion) {
 }
 
 function contarLineasTotales(){
-	// No contar las líneas de camión (es_camion: true) en el límite de 12
-	return cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.filter(l => !l.es_camion).length || 0), 0);
+	// El límite de 12 líneas es la suma de:
+	//   - los camiones reales que se guardan en cotizacion_camiones (excluye la sección
+	//     especial "Porcentaje de servicio", que nunca se guarda en cotizacion_camiones)
+	//   - las líneas de servicio que se guardan en cotizacion_detalle (excluye las líneas
+	//     con es_camion: true, que son el remanente legacy con id_servicio null y no
+	//     cuentan como línea de contenido)
+	const numCamiones = cotizacion.camiones.filter(c => !c.es_serv_porcentaje).length;
+	const numLineas = cotizacion.camiones.reduce((acc, c) => acc + (c.lineas?.filter(l => !l.es_camion).length || 0), 0);
+	return numCamiones + numLineas;
+}
+
+function validarLimiteLineas(mostrarAlerta = true){
+	const total = contarLineasTotales();
+	if (total > 12) {
+		if (mostrarAlerta) {
+			Swal.fire({
+				icon: 'warning',
+				title: 'Límite de líneas excedido',
+				text: `Esta cotización tiene ${total} líneas entre camiones y servicios. El máximo permitido es 12. Elimine líneas o camiones antes de continuar.`
+			});
+		}
+		return false;
+	}
+	return true;
 }
 
 function agregarCamionSeleccionado(){
@@ -1031,6 +1053,8 @@ async function guardarParcial(cot, opts = {}){
 	try{
 		if (cot.estado !== 7) return;
 
+		if (!validarLimiteLineas(!opts.silencioso)) return;
+
 		sincronizarClienteManual();
 		const idCliente = await asegurarClienteParcial();
 		const idDireccion = await asegurarDireccion(cot.cliente.direccion);
@@ -1246,6 +1270,7 @@ async function emitirCotizacion(cot){
 		Swal.fire({ icon: 'warning', title: 'No se puede emitir', text: 'Esta cotización no puede ser emitida.' });
 		return;
 	}
+	if (!validarLimiteLineas()) return;
 	try{
 		if(cot.cliente.es_nuevo){
 			cot.cliente.dni = String(cot.cliente.dni).trim();
