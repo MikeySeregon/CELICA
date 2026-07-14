@@ -40,7 +40,7 @@ async function cargarCotizacionExistente(id){
 
 	cotizacion.id_cotizacion = cab.id_cotizacion;
 	cotizacion.fecha = cab.fecha_cotizacion;
-	cotizacion.estado = cab.id_estado;
+	cotizacion.estado = Number(cab.id_estado);
 	cotizacion.id_camion = cab.id_camion;
 	cotizacion.camion = cab.camion || '';
 
